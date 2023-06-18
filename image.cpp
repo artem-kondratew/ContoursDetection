@@ -1,77 +1,126 @@
 #include "image.h"
 
 
-Pixel::Pixel(int red, int green, int blue) {
-    r = red;
-    g = green;
-    b = blue;
+Image::Image() {
+    format = -1;
+    w = 0;
+    h = 0;
+    size = 0;
+    values = nullptr;
+    data = nullptr;
+    qimg = nullptr;
 }
 
 
-int** Image::createDoubleArray(int h, int w) {
-    int** array = new int*[h];
-    for (int y = 0; y < h; y++) {
-        array[y] = new int[w];
+Image::Image(QImage* qimage) {
+    format = FORMAT_RGB;
+    w = qimage->width();
+    h = qimage->height();
+    size = h * w;
+    qimg = qimage;
+
+    values = new uint8_t[size * format];
+    data = new uint8_t*[size];
+
+    std::memcpy(values, qimg->bits(), sizeof(uint8_t) * size * format);
+
+    for (int pix = 0; pix < size; pix++) {
+        data[pix] = values + pix * format;
     }
-    return array;
 }
 
 
-void Image::createGray() {
-    gray = createDoubleArray(h, w);
+Image::Image(uint8_t* img_values, int img_w, int img_h, int img_format) {
+    format = img_format;
+    w = img_w;
+    h = img_h;
+    size = w * h;
+    qimg = nullptr;
 
-    for (int y = 0; y < h; y++) {
-        for (int x = 0; x < w; x++) {
-            gray[y][x] = int(GRAY_R * r[y][x] + GRAY_G * g[y][x] + GRAY_B*b[y][x]);
-        }
+    values = new uint8_t[size * format];
+    data = new uint8_t*[size];
+
+    std::memcpy(values, img_values, sizeof(uint8_t) * size * format);
+    for (int pix = 0; pix < size; pix++) {
+        data[pix] = values + pix * format;
     }
 }
 
 
-Image::Image(QImage* img) {
-    w = img->width();
-    h = img->height();
-    r = createDoubleArray(h, w);
-    g = createDoubleArray(h, w);
-    b = createDoubleArray(h, w);
-
-    for (int y = 0; y < h; y++) {
-        for (int x = 0; x < w; x++) {
-            QRgb rgb = img->pixel(x, y);
-            r[y][x] = qRed(rgb);
-            g[y][x] = qGreen(rgb);
-            b[y][x] = qBlue(rgb);
-        }
-    }
-
-    createGray();
+Image::~Image() {
+    delete[] values;
+    delete[] data;
 }
 
 
-Pixel Image::rgb_pixel(int y, int x) {
-    return Pixel(r[y][x], g[y][x], b[y][x]);
+Image::Image(const Image& other) {
+    format = other.format;
+    w = other.w;
+    h = other.h;
+    size = other.size;
+    delete[] values;
+    delete[] data;
+    values = other.values;
+    data = other.data;
+    qimg = other.qimg;
 }
 
 
-QImage Image::Image2QImage() {
-    QImage img(w, h, QImage::Format_RGB888);
-    for (int y = 0; y < h; y++) {
-        for (int x = 0; x < w; x++) {
-            img.setPixel(x, y, qRgb(r[y][x], g[y][x], b[y][x]));
-        }
-    }
-    return img;
+Image::Image(Image&& other) {
+    format = other.format;
+    w = other.w;
+    h = other.h;
+    size = other.size;
+    delete[] values;
+    delete[] data;
+    values = other.values;
+    data = other.data;
+    qimg = other.qimg;
+    other.values = nullptr;
+    other.data = nullptr;
+    other.qimg = nullptr;
 }
 
 
-QImage Image::Gray2QImage() {
-    QImage img(w, h, QImage::Format_RGB888);
-    for (int y = 0; y < h; y++) {
-        for (int x = 0; x < w; x++) {
-            img.setPixel(x, y, qRgb(gray[y][x], gray[y][x], gray[y][x]));
-        }
+Image& Image::operator=(const Image& other) {
+    if (this == &other) {
+        return *this;
     }
-    return img;
+    format = other.format;
+    w = other.w;
+    h = other.h;
+    size = other.size;
+    delete[] values;
+    delete[] data;
+    values = other.values;
+    data = other.data;
+    qimg = other.qimg;
+    return *this;
+}
+
+
+Image& Image::operator=(Image&& other) {
+    if (this == &other) {
+        return *this;
+    }
+    format = other.format;
+    w = other.w;
+    h = other.h;
+    size = other.size;
+    delete[] values;
+    delete[] data;
+    values = other.values;
+    data = other.data;
+    qimg = other.qimg;
+    other.values = nullptr;
+    other.data = nullptr;
+    other.qimg = nullptr;
+    return *this;
+}
+
+
+bool Image::isExists() {
+    return size != 0;
 }
 
 
@@ -82,4 +131,106 @@ int Image::width() {
 
 int Image::height() {
     return h;
+}
+
+
+QImage Image::QImg() {
+    return *qimg;
+}
+
+
+Image Image::Rgb() {
+    Image img;
+    img.format = FORMAT_RGB;
+    img.w = w;
+    img.h = h;
+    img.size = size;
+    img.qimg = qimg;
+
+    img.values = new uint8_t[size * img.format];
+    img.data = new uint8_t*[size];
+
+    if (format == FORMAT_RGB) {
+        std::memcpy(img.values, values, sizeof(uint8_t) * size * format);
+        for (int pix = 0; pix < size; pix++) {
+            img.data[pix] = img.values + pix * format;
+        }
+        return img;
+    }
+    return Image();
+}
+
+
+Image Image::Gray() {
+    Image img;
+    img.format = FORMAT_GRAY;
+    img.w = w;
+    img.h = h;
+    img.size = h * w;
+    img.qimg = qimg;
+
+    img.values = new uint8_t[img.size];
+    img.data = new uint8_t*[img.size];
+
+    if (format == FORMAT_RGB) {
+        for (int pix = 0; pix < img.size; pix++) {
+            img.values[pix] = int(GRAY_R * data[pix][RED] + GRAY_G * data[pix][GREEN] + GRAY_B * data[pix][BLUE]);
+            img.data[pix] = img.values + pix * format;
+        }
+        return img;
+    }
+
+    if (format == FORMAT_GRAY) {
+        for (int pix = 0; pix < size; pix++) {
+            std::memcpy(img.values, values, sizeof(uint8_t) * size);
+            for (int pix = 0; pix < size; pix++) {
+                img.data[pix] = img.values + pix;
+            }
+        }
+        return img;
+    }
+    return img;
+}
+
+
+QImage Image::Image2QImage() {
+    if (format == FORMAT_RGB) {
+        return QImage(values, w, h, QImage::Format_RGB888);
+    }
+    if (format == FORMAT_GRAY) {
+        return QImage(values, w, h, QImage::Format_Grayscale8);
+    }
+    return QImage();
+}
+
+
+int Image::multiply(uint8_t* img, double* kernel) {
+    int sum = 0;
+    for (int i = 0; i < KERNEL_SIZE; i++) {
+        sum += img[i] * kernel[i];
+    }
+    return sum;
+}
+
+
+Image Image::conv(double* kernel) {
+    if (format != FORMAT_GRAY) {
+        return Image();
+    }
+    uint8_t* matrix = new uint8_t[KERNEL_SIZE];
+    uint8_t new_img[size];
+    for (int y = 1; y < h-1; y++) {
+        for (int x = 1; x < w-1; x++) {
+            for (int i = y - 1; i < y + 2; i++) {
+                int filled_rows = 0;
+                uint8_t* src = values + sizeof(uint8_t) * (w * (y - 1) + x - 1);
+                uint8_t* dst = matrix + sizeof(uint8_t) * filled_rows * KERNEL_EDGE;
+                std::memcpy(dst, src, sizeof(uint8_t) * KERNEL_EDGE);
+                filled_rows++;
+            }
+            new_img[y*w+x] = multiply(matrix, kernel);
+        }
+    }
+    delete[] matrix;
+    return Image(new_img, w, h, FORMAT_GRAY);
 }

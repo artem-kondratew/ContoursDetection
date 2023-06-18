@@ -3,7 +3,7 @@
 
 
 #include <QMainWindow>
-#include "detection.h"
+#include <QDoubleSpinBox>
 #include "image.h"
 
 
@@ -14,6 +14,8 @@ QT_END_NAMESPACE
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
+public:
+    QDoubleSpinBox* DoubleSpinBoxArray[KERNEL_SIZE];
 
 private:
     void centerWidgets();
@@ -25,16 +27,22 @@ protected:
     void resizeEvent(QResizeEvent *event);
 
 private:
-    void locateImage(Image img);
+    void locateImage(Image* img, Image* gray);
 
 private slots:
     void on_imgUploadButton_clicked();
 
     void on_actionClose_triggered();
 
+    void on_actionShow_triggered(bool checked);
+
+    void on_convPushButton_clicked();
+
 private:
     Ui::MainWindow *ui;
 };
+
+
 
 
 #endif // MAINWINDOW_H

@@ -21,8 +21,6 @@ set(PROJECT_SOURCES
         mainwindow.cpp
         mainwindow.h
         mainwindow.ui
-        detection.h
-        detection.cpp
         image.h
         image.cpp
         ${TS_FILES}

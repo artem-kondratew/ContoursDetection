@@ -29,7 +29,7 @@
    <widget class="QLineEdit" name="imgPathLineEdit">
     <property name="geometry">
      <rect>
-      <x>380</x>
+      <x>470</x>
       <y>330</y>
       <width>341</width>
       <height>25</height>
@@ -39,7 +39,7 @@
    <widget class="QPushButton" name="imgUploadButton">
     <property name="geometry">
      <rect>
-      <x>380</x>
+      <x>470</x>
       <y>400</y>
       <width>341</width>
       <height>25</height>
@@ -61,7 +61,7 @@
     </property>
     <property name="geometry">
      <rect>
-      <x>480</x>
+      <x>560</x>
       <y>370</y>
       <width>151</width>
       <height>17</height>
@@ -80,7 +80,7 @@
    <widget class="QLabel" name="imgPromtLabel">
     <property name="geometry">
      <rect>
-      <x>450</x>
+      <x>530</x>
       <y>250</y>
       <width>221</width>
       <height>71</height>
@@ -98,8 +98,8 @@
    <widget class="QLabel" name="rgbLabel">
     <property name="geometry">
      <rect>
-      <x>270</x>
-      <y>50</y>
+      <x>450</x>
+      <y>470</y>
       <width>181</width>
       <height>131</height>
      </rect>
@@ -111,14 +111,238 @@
    <widget class="QLabel" name="grayLabel">
     <property name="geometry">
      <rect>
-      <x>560</x>
-      <y>50</y>
+      <x>830</x>
+      <y>470</y>
       <width>181</width>
       <height>131</height>
      </rect>
     </property>
     <property name="text">
      <string/>
+    </property>
+   </widget>
+   <widget class="QCheckBox" name="convCheckBox">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>10</y>
+      <width>131</width>
+      <height>23</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Use convolution</string>
+    </property>
+   </widget>
+   <widget class="QDoubleSpinBox" name="convDoubleSpinBox_00">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>40</y>
+      <width>81</width>
+      <height>26</height>
+     </rect>
+    </property>
+    <property name="decimals">
+     <number>4</number>
+    </property>
+    <property name="minimum">
+     <double>-100000.000000000000000</double>
+    </property>
+    <property name="maximum">
+     <double>100000.000000000000000</double>
+    </property>
+    <property name="singleStep">
+     <double>0.001000000000000</double>
+    </property>
+   </widget>
+   <widget class="QDoubleSpinBox" name="convDoubleSpinBox_10">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>80</y>
+      <width>81</width>
+      <height>26</height>
+     </rect>
+    </property>
+    <property name="decimals">
+     <number>4</number>
+    </property>
+    <property name="minimum">
+     <double>-100000.000000000000000</double>
+    </property>
+    <property name="maximum">
+     <double>100000.000000000000000</double>
+    </property>
+    <property name="singleStep">
+     <double>0.001000000000000</double>
+    </property>
+   </widget>
+   <widget class="QDoubleSpinBox" name="convDoubleSpinBox_20">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>120</y>
+      <width>81</width>
+      <height>26</height>
+     </rect>
+    </property>
+    <property name="decimals">
+     <number>4</number>
+    </property>
+    <property name="minimum">
+     <double>-100000.000000000000000</double>
+    </property>
+    <property name="maximum">
+     <double>100000.000000000000000</double>
+    </property>
+    <property name="singleStep">
+     <double>0.001000000000000</double>
+    </property>
+   </widget>
+   <widget class="QDoubleSpinBox" name="convDoubleSpinBox_01">
+    <property name="geometry">
+     <rect>
+      <x>100</x>
+      <y>40</y>
+      <width>81</width>
+      <height>26</height>
+     </rect>
+    </property>
+    <property name="decimals">
+     <number>4</number>
+    </property>
+    <property name="minimum">
+     <double>-100000.000000000000000</double>
+    </property>
+    <property name="maximum">
+     <double>100000.000000000000000</double>
+    </property>
+    <property name="singleStep">
+     <double>0.001000000000000</double>
+    </property>
+   </widget>
+   <widget class="QDoubleSpinBox" name="convDoubleSpinBox_11">
+    <property name="geometry">
+     <rect>
+      <x>100</x>
+      <y>80</y>
+      <width>81</width>
+      <height>26</height>
+     </rect>
+    </property>
+    <property name="decimals">
+     <number>4</number>
+    </property>
+    <property name="minimum">
+     <double>-100000.000000000000000</double>
+    </property>
+    <property name="maximum">
+     <double>100000.000000000000000</double>
+    </property>
+    <property name="singleStep">
+     <double>0.001000000000000</double>
+    </property>
+   </widget>
+   <widget class="QDoubleSpinBox" name="convDoubleSpinBox_21">
+    <property name="geometry">
+     <rect>
+      <x>100</x>
+      <y>120</y>
+      <width>81</width>
+      <height>26</height>
+     </rect>
+    </property>
+    <property name="decimals">
+     <number>4</number>
+    </property>
+    <property name="minimum">
+     <double>-100000.000000000000000</double>
+    </property>
+    <property name="maximum">
+     <double>100000.000000000000000</double>
+    </property>
+    <property name="singleStep">
+     <double>0.001000000000000</double>
+    </property>
+   </widget>
+   <widget class="QDoubleSpinBox" name="convDoubleSpinBox_02">
+    <property name="geometry">
+     <rect>
+      <x>190</x>
+      <y>40</y>
+      <width>81</width>
+      <height>26</height>
+     </rect>
+    </property>
+    <property name="decimals">
+     <number>4</number>
+    </property>
+    <property name="minimum">
+     <double>-100000.000000000000000</double>
+    </property>
+    <property name="maximum">
+     <double>100000.000000000000000</double>
+    </property>
+    <property name="singleStep">
+     <double>0.001000000000000</double>
+    </property>
+   </widget>
+   <widget class="QDoubleSpinBox" name="convDoubleSpinBox_12">
+    <property name="geometry">
+     <rect>
+      <x>190</x>
+      <y>80</y>
+      <width>81</width>
+      <height>26</height>
+     </rect>
+    </property>
+    <property name="decimals">
+     <number>4</number>
+    </property>
+    <property name="minimum">
+     <double>-100000.000000000000000</double>
+    </property>
+    <property name="maximum">
+     <double>100000.000000000000000</double>
+    </property>
+    <property name="singleStep">
+     <double>0.001000000000000</double>
+    </property>
+   </widget>
+   <widget class="QDoubleSpinBox" name="convDoubleSpinBox_22">
+    <property name="geometry">
+     <rect>
+      <x>190</x>
+      <y>120</y>
+      <width>81</width>
+      <height>26</height>
+     </rect>
+    </property>
+    <property name="decimals">
+     <number>4</number>
+    </property>
+    <property name="minimum">
+     <double>-100000.000000000000000</double>
+    </property>
+    <property name="maximum">
+     <double>100000.000000000000000</double>
+    </property>
+    <property name="singleStep">
+     <double>0.001000000000000</double>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="convPushButton">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>160</y>
+      <width>261</width>
+      <height>25</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Ok</string>
     </property>
    </widget>
   </widget>
@@ -138,11 +362,26 @@
     </property>
     <addaction name="actionClose"/>
    </widget>
+   <widget class="QMenu" name="menuConv">
+    <property name="title">
+     <string>Conv</string>
+    </property>
+    <addaction name="actionShow"/>
+   </widget>
    <addaction name="menuActions"/>
+   <addaction name="menuConv"/>
   </widget>
   <action name="actionClose">
    <property name="text">
     <string>Close</string>
+   </property>
+  </action>
+  <action name="actionShow">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Show</string>
    </property>
   </action>
  </widget>

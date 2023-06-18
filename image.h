@@ -2,6 +2,7 @@
 #define IMAGE_H
 
 
+#include <cstring>
 #include <QMainWindow>
 
 
@@ -9,38 +10,50 @@
 #define GRAY_G 0.587
 #define GRAY_B 0.114
 
+#define RED   0
+#define GREEN 1
+#define BLUE  2
 
-class Pixel {
-public:
-    int r, g, b;
-public:
-    Pixel(int red, int green, int blue);
-    ~Pixel() = default;
-};
+#define KERNEL_SIZE 9
+#define KERNEL_EDGE 3
+
+#define FORMAT_RGB  3
+#define FORMAT_GRAY 1
 
 
 class Image {
 private:
+    int format;
     int w;
     int h;
-    int** r;
-    int** g;
-    int** b;
-    int** gray;
+    int size;
+    QImage* qimg;
 
-private:
-    int** createDoubleArray(int h, int w);
-    void createGray();
+    uint8_t* values;
+    uint8_t** data;
 
 public:
-    Image(QImage* img);
+    Image();
+    Image(QImage* qimage);
+    Image(uint8_t* img_values, int img_w, int img_h, int img_format);
+    ~Image();
+    Image(const Image &other);
+    Image(Image &&other);
+    Image& operator=(const Image &other);
+    Image& operator=(Image &&other);
 
-    Pixel rgb_pixel(int y, int x);
-    QImage Image2QImage();
-    QImage Gray2QImage();
-
+    bool isExists();
     int width();
     int height();
+    QImage QImg();
+
+    Image Gray();
+    Image Rgb();
+
+    QImage Image2QImage();
+
+    int multiply(uint8_t* img, double* kernel);
+    Image conv(double* conv);
 };
 
 
