@@ -1,8 +1,8 @@
 #include "mainwindow.h"
-#include "./ui_mainwindow.h"
-#include <QFileDialog>
 
-Image img, gray;
+
+QImage qimg;
+Image image, gray, bin;
 
 
 void MainWindow::centerWidgets() {
@@ -42,16 +42,17 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     ui->imgOpenErrorLabel->hide();
     ui->rgbLabel->hide();
     ui->grayLabel->hide();
+    ui->Sobelx->hide();
 
-    ui->imgPathLineEdit->setText("/home/user/Pictures/img.jpg");
+    ui->imgPathLineEdit->setText("/home/user/Pictures/aruco.jpg");
 
     DoubleSpinBoxArray[0] = ui->convDoubleSpinBox_00; DoubleSpinBoxArray[1] = ui->convDoubleSpinBox_01; DoubleSpinBoxArray[2] = ui->convDoubleSpinBox_02;
     DoubleSpinBoxArray[3] = ui->convDoubleSpinBox_10; DoubleSpinBoxArray[4] = ui->convDoubleSpinBox_11; DoubleSpinBoxArray[5] = ui->convDoubleSpinBox_12;
     DoubleSpinBoxArray[6] = ui->convDoubleSpinBox_20; DoubleSpinBoxArray[7] = ui->convDoubleSpinBox_21; DoubleSpinBoxArray[8] = ui->convDoubleSpinBox_22;
 
-    ui->convDoubleSpinBox_00->setValue(1); ui->convDoubleSpinBox_01->setValue(1); ui->convDoubleSpinBox_02->setValue(1);
-    ui->convDoubleSpinBox_10->setValue(1); ui->convDoubleSpinBox_11->setValue(1); ui->convDoubleSpinBox_12->setValue(1);
-    ui->convDoubleSpinBox_20->setValue(1); ui->convDoubleSpinBox_21->setValue(1); ui->convDoubleSpinBox_22->setValue(1);
+    ui->convDoubleSpinBox_00->setValue(0); ui->convDoubleSpinBox_01->setValue(0); ui->convDoubleSpinBox_02->setValue(0);
+    ui->convDoubleSpinBox_10->setValue(0); ui->convDoubleSpinBox_11->setValue(1); ui->convDoubleSpinBox_12->setValue(0);
+    ui->convDoubleSpinBox_20->setValue(0); ui->convDoubleSpinBox_21->setValue(0); ui->convDoubleSpinBox_22->setValue(0);
 
     ui->convCheckBox->hide();
     ui->convPushButton->hide();
@@ -66,36 +67,38 @@ MainWindow::~MainWindow() {
 }
 
 
-void MainWindow::resizeEvent(QResizeEvent *event) {
-    centerWidgets();
-    locateImage(&img, &gray);
+void MainWindow::saveQImage(QImage qimage) {
+    QString fileName = QFileDialog::getSaveFileName(this, tr("Save as..."), "img.jpg", QString());
+    if (fileName.isEmpty() || fileName.isNull())
+        return;
+    QPixmap::fromImage(qimage).save(fileName);
 }
 
 
-void MainWindow::locateImage(Image* img, Image* gray) {
-    if (img == nullptr || gray == nullptr) {
+void MainWindow::locateImage(Image* left_img, int left_format, Image* right_img, int right_format) {
+    if (left_img == nullptr || right_img == nullptr) {
         return;
     }
 
-    QImage qgray = gray->Image2QImage();
-    QImage qimg = img->Image2QImage();
+    QImage qimg = left_img->Image2QImage(left_format);
+    QImage qgray = right_img->Image2QImage(right_format);
 
     QPixmap img_pixmap = QPixmap::fromImage(qimg);
     QPixmap gray_pixmap = QPixmap::fromImage(qgray);
 
     QRect geometry = this->geometry();
 
-    if (img->width() > geometry.width() / 2 || img->height() > geometry.height()) {
+    if (left_img->width() > geometry.width() / 2 || left_img->height() > geometry.height()) {
         img_pixmap = img_pixmap.scaled(geometry.width() / 2, geometry.height(), Qt::KeepAspectRatio);
         gray_pixmap = gray_pixmap.scaled(geometry.width() / 2, geometry.height(), Qt::KeepAspectRatio);
         ui->rgbLabel->setGeometry(0, 0, geometry.width() / 2, geometry.height());
         ui->grayLabel->setGeometry(geometry.width() / 2, 0, geometry.width() / 2, geometry.height());
     }
     else {
-        int x = (geometry.width() - img->width() * 2) / 3;
-        int y = (geometry.height() - img->height()) / 2;
-        ui->rgbLabel->setGeometry(x, y, img->width(), img->height());
-        ui->grayLabel->setGeometry(img->width() + 2 * x, y, img->width(), img->height());
+        int x = (geometry.width() - left_img->width() * 2) / 3;
+        int y = (geometry.height() - left_img->height()) / 2;
+        ui->rgbLabel->setGeometry(x, y, left_img->width(), left_img->height());
+        ui->grayLabel->setGeometry(left_img->width() + 2 * x, y, left_img->width(), left_img->height());
     }
 
     ui->rgbLabel->setPixmap(img_pixmap);
@@ -103,24 +106,40 @@ void MainWindow::locateImage(Image* img, Image* gray) {
 }
 
 
+void MainWindow::resizeEvent(QResizeEvent *event) {
+    centerWidgets();
+    //locateImage(&image, , &gray);
+}
+
+
 void MainWindow::on_imgUploadButton_clicked() {
     QString path = ui->imgPathLineEdit->text();
-    QImage qimg = QImage(path).convertToFormat(QImage::Format_RGB888);
+    qimg = QImage(path).convertToFormat(QImage::Format_RGB888);
 
     if (qimg.isNull()) {
         ui->imgOpenErrorLabel->show();
         return;
     }
 
-    img = Image(&qimg);
-    gray = img.Gray();
+    image = Image(&qimg);
+    gray = image.Gray();
+    bin = image.Bin();
+
+    Image sobel = gray.sobel(true).Bin();
+
+    Image cont = bin.externalContouring();
+    Image dilate = cont.dilate();
+    Image erode = dilate.erode();
+
+    Image fd = gray.fd().dilate();
+
+    locateImage(&gray, FORMAT_GRAY, &fd, FORMAT_BIN);
 
     ui->imgOpenErrorLabel->hide();
     ui->imgPathLineEdit->hide();
     ui->imgUploadButton->hide();
     ui->imgPromtLabel->hide();
 
-    locateImage(&img, &gray);
     ui->rgbLabel->show();
     ui->grayLabel->show();
 }
@@ -140,6 +159,7 @@ void MainWindow::on_actionShow_triggered(bool checked) {
     if (checked) {
         ui->convCheckBox->show();
         ui->convPushButton->show();
+        ui->Sobelx->show();
         for (int i = 0; i < KERNEL_SIZE; i++) {
             DoubleSpinBoxArray[i]->show();
         }
@@ -147,20 +167,36 @@ void MainWindow::on_actionShow_triggered(bool checked) {
     else {
         ui->convCheckBox->hide();
         ui->convPushButton->hide();
+        ui->Sobelx->hide();
         for (int i = 0; i < KERNEL_SIZE; i++) {
             DoubleSpinBoxArray[i]->hide();
         }
     }
 }
 
+
+Image MainWindow::useConv() {
+    if (ui->Sobelx->isChecked()) {
+        return gray.sobel(true  );
+    }
+
+    double kernel[KERNEL_SIZE];
+    for (int i = 0; i < KERNEL_SIZE; i++) {
+        kernel[i] = DoubleSpinBoxArray[i]->value();
+    }
+
+    return gray.conv(kernel);
+}
+
+
 void MainWindow::on_convPushButton_clicked() {
     if (!ui->convCheckBox->isChecked()) {
         return;
     }
-    double array[KERNEL_SIZE];
-    for (int i = 0; i < KERNEL_SIZE; i++) {
-        array[i] = DoubleSpinBoxArray[i]->value();
-    }
-    Image conv_img = gray.conv(array);
-    locateImage(&img, &conv_img);
+
+    Image conv_img = useConv();
+
+    locateImage(&conv_img, FORMAT_GRAY, &gray, FORMAT_GRAY);
+
+    //saveQImage(conv_img.Image2QImage());
 }

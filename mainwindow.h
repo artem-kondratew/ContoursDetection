@@ -4,6 +4,8 @@
 
 #include <QMainWindow>
 #include <QDoubleSpinBox>
+#include <QFileDialog>
+#include "./ui_mainwindow.h"
 #include "image.h"
 
 
@@ -23,11 +25,14 @@ public:
     MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
 
+    void saveQImage(QImage qimage);
+
 protected:
     void resizeEvent(QResizeEvent *event);
+    Image useConv();
 
 private:
-    void locateImage(Image* img, Image* gray);
+    void locateImage(Image* left_img, int left_format, Image* right_img, int right_format);
 
 private slots:
     void on_imgUploadButton_clicked();
