@@ -207,16 +207,16 @@ QImage Image::Image2QImage(int format) {
 }
 
 
-int Image::multiply(uint8_t* img, double* kernel) {
+int Image::multiply(uint8_t* img, double* kernel, double k) {
     double sum = 0;
     for (int i = 0; i < KERNEL_SIZE; i++) {
         sum += img[i] * kernel[i];
     }
-    return sum;
+    return sum / k;
 }
 
 
-Image Image::conv(double* kernel) {
+Image Image::conv(double* kernel, double k) {
     if (gray == nullptr) {
         createGray();
     }
@@ -233,7 +233,7 @@ Image Image::conv(double* kernel) {
                 std::memcpy(dst, src, sizeof(uint8_t) * KERNEL_EDGE);
                 filled_rows++;
             }
-            new_img[y*w+x] = multiply(matrix, kernel);
+            new_img[y*w+x] = multiply(matrix, kernel, k);
         }
     }
     return Image(new_img, w, h, FORMAT_GRAY, qimg);
@@ -250,9 +250,9 @@ Image Image::sobel(bool vertical) {
                          -1., -2., -1.};
 
     if (vertical) {
-        return conv(matrix_x);
+        return conv(matrix_x, 1);
     }
-    return conv(matrix_y);
+    return conv(matrix_y, 1);
 }
 
 
@@ -361,7 +361,7 @@ bool Image::compareNeighbors(uint8_t* img, int x, int y, int w, int h, double k)
                 continue;
             }
 
-            nb = checkEdges(j, i, h, w) ? img[i*w+j] : 255;
+            nb = checkEdges(j, i, h, w) ? img[i*w+j] : 0;
             if (pixel < nb) {
                 return true;
             }

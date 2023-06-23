@@ -65,10 +65,10 @@ public:
     QImage Image2QImage(int format);
 
 private:
-    int multiply(uint8_t* img, double* kernel);
+    int multiply(uint8_t* img, double* kernel, double k);
 
 public:
-    Image conv(double* conv);
+    Image conv(double* conv, double k);
 
     Image sobel(bool vertical);
 

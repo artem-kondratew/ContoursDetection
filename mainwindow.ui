@@ -337,7 +337,7 @@
      <rect>
       <x>10</x>
       <y>160</y>
-      <width>261</width>
+      <width>171</width>
       <height>25</height>
      </rect>
     </property>
@@ -356,6 +356,28 @@
     </property>
     <property name="text">
      <string>Sobel</string>
+    </property>
+   </widget>
+   <widget class="QDoubleSpinBox" name="convDoubleSpinBox_N">
+    <property name="geometry">
+     <rect>
+      <x>190</x>
+      <y>160</y>
+      <width>81</width>
+      <height>26</height>
+     </rect>
+    </property>
+    <property name="decimals">
+     <number>4</number>
+    </property>
+    <property name="minimum">
+     <double>-100000.000000000000000</double>
+    </property>
+    <property name="maximum">
+     <double>100000.000000000000000</double>
+    </property>
+    <property name="singleStep">
+     <double>0.001000000000000</double>
     </property>
    </widget>
   </widget>

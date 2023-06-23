@@ -56,6 +56,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
 
     ui->convCheckBox->hide();
     ui->convPushButton->hide();
+    ui->convDoubleSpinBox_N->hide();
     for (int i = 0; i < KERNEL_SIZE; i++) {
         DoubleSpinBoxArray[i]->hide();
     }
@@ -125,7 +126,7 @@ void MainWindow::on_imgUploadButton_clicked() {
     gray = image.Gray();
     bin = image.Bin();
 
-    Image sobel = gray.sobel(true).Bin();
+    Image sobel = image.sobel(true);
 
     Image cont = bin.externalContouring();
     Image dilate = cont.dilate();
@@ -162,6 +163,7 @@ void MainWindow::on_actionShow_triggered(bool checked) {
         ui->Sobelx->show();
         for (int i = 0; i < KERNEL_SIZE; i++) {
             DoubleSpinBoxArray[i]->show();
+            ui->convDoubleSpinBox_N->show();
         }
     }
     else {
@@ -170,6 +172,7 @@ void MainWindow::on_actionShow_triggered(bool checked) {
         ui->Sobelx->hide();
         for (int i = 0; i < KERNEL_SIZE; i++) {
             DoubleSpinBoxArray[i]->hide();
+            ui->convDoubleSpinBox_N->hide();
         }
     }
 }
@@ -185,7 +188,9 @@ Image MainWindow::useConv() {
         kernel[i] = DoubleSpinBoxArray[i]->value();
     }
 
-    return gray.conv(kernel);
+    double k = ui->convDoubleSpinBox_N->value();
+
+    return gray.conv(kernel, k);
 }
 
 
@@ -194,9 +199,9 @@ void MainWindow::on_convPushButton_clicked() {
         return;
     }
 
-    Image conv_img = useConv();
+    Image conv = useConv();
 
-    locateImage(&conv_img, FORMAT_GRAY, &gray, FORMAT_GRAY);
+    locateImage(&gray, FORMAT_GRAY, &conv, FORMAT_GRAY);
 
     //saveQImage(conv_img.Image2QImage());
 }
