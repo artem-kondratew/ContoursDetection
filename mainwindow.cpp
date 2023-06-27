@@ -2,7 +2,7 @@
 
 
 QImage qimg;
-Image image, gray, bin;
+Image left, right;
 
 
 void MainWindow::centerWidgets() {
@@ -122,11 +122,12 @@ void MainWindow::on_imgUploadButton_clicked() {
         return;
     }
 
-    image = Image(&qimg);
-    gray = image.Gray();
-    bin = image.Bin();
+    Image image = Image(&qimg);
+    Image gray = image.Gray();
+    Image bin = image.Bin();
 
-    Image sobel = image.sobel(true);
+    Image sobelx = image.Sobel(true, FORMAT_BIN).dilate();
+    Image sobely = image.Sobel(false, FORMAT_BIN).dilate();
 
     Image cont = bin.externalContouring();
     Image dilate = cont.dilate();
@@ -134,7 +135,14 @@ void MainWindow::on_imgUploadButton_clicked() {
 
     Image fd = gray.fd().dilate();
 
-    locateImage(&gray, FORMAT_GRAY, &fd, FORMAT_BIN);
+    Image gauss = bin.GaussianBlur(FORMAT_BIN);
+
+    Image canny = bin.canny();
+
+    Image gray_sobelx = gray.Sobel(true, FORMAT_GRAY);
+
+
+    locateImage(&bin, FORMAT_BIN, &canny, FORMAT_RGB);
 
     ui->imgOpenErrorLabel->hide();
     ui->imgPathLineEdit->hide();
@@ -180,7 +188,8 @@ void MainWindow::on_actionShow_triggered(bool checked) {
 
 Image MainWindow::useConv() {
     if (ui->Sobelx->isChecked()) {
-        return gray.sobel(true  );
+        //return gray.sobel(true);
+        return Image();
     }
 
     double kernel[KERNEL_SIZE];
@@ -190,12 +199,13 @@ Image MainWindow::useConv() {
 
     double k = ui->convDoubleSpinBox_N->value();
 
-    return gray.conv(kernel, k);
+    //return gray.conv(kernel, k);
+    return Image();
 }
 
 
 void MainWindow::on_convPushButton_clicked() {
-    if (!ui->convCheckBox->isChecked()) {
+    /*if (!ui->convCheckBox->isChecked()) {
         return;
     }
 
@@ -203,5 +213,5 @@ void MainWindow::on_convPushButton_clicked() {
 
     locateImage(&gray, FORMAT_GRAY, &conv, FORMAT_GRAY);
 
-    //saveQImage(conv_img.Image2QImage());
+    //saveQImage(conv_img.Image2QImage());*/
 }

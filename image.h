@@ -3,6 +3,7 @@
 
 
 #include <cstring>
+#include <cmath>
 #include <QMainWindow>
 
 
@@ -27,6 +28,11 @@
 
 #define NEIGHBORS 8
 
+#define GRAD_ANGLE_0   0
+#define GRAD_ANGLE_45  1
+#define GRAD_ANGLE_90  2
+#define GRAD_ANGLE_135 3
+
 
 class Image {
 private:
@@ -43,7 +49,7 @@ private:
 public:
     Image();
     Image(QImage* qimage);
-    Image(uint8_t* img_values, int img_w, int img_h, int img_format, QImage* img_qimg);
+    Image(uint8_t* img_values, int img_w, int img_h, int img_format, QImage* img_qimg=nullptr);
     ~Image();
     Image(const Image &other);
     Image(Image &&other);
@@ -68,24 +74,42 @@ private:
     int multiply(uint8_t* img, double* kernel, double k);
 
 public:
-    Image conv(double* conv, double k);
-
-    Image sobel(bool vertical);
+    uint8_t* conv(uint8_t* values, double* conv, double k, int format);
 
 private:
-    bool checkEdges(int x, int y, int h, int w);
-    uint8_t* findNeighbors(uint8_t* img, int x, int y, int w, int h);
+    uint8_t* gaussianBlur(int format);
+
+public:
+    Image GaussianBlur(int format);
+
+private:
+    uint8_t* sobel(uint8_t* values, bool vertical, int format);
+
+public:
+    Image Sobel(bool vertical, int format);
+
+
+private:
+    bool checkEdges(int x, int y, int w, int h);
+    uint16_t* findNeighbors(uint16_t* img, int x, int y, int w, int h);
     bool checkNeighbors(uint8_t* img, int x, int y, int w, int h, bool find_high);
 
 public:
     Image externalContouring();
     Image dilate();
     Image erode();
+
 private:
     bool compareNeighbors(uint8_t* img, int x, int y, int w, int h, double k);
 
 public:
     Image fd(double k=1.0);
+
+private:
+    uint8_t* doubleBorderFiltration(uint16_t* img, uint16_t bottom_val, uint16_t top_val);
+
+public:
+    Image canny();
 };
 
 

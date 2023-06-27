@@ -33,20 +33,25 @@ Image::Image(uint8_t* img_values, int img_w, int img_h,  int img_format, QImage*
     w = img_w;
     h = img_h;
     size = h * w;
-    qimg = img_qimg;
+    qimg = nullptr;
 
-    rgb_data = new uint8_t*[size];
+    rgb_data = nullptr;
     gray = nullptr;
     bin = nullptr;
 
-    for (int pix = 0; pix < size; pix++) {
-        rgb_data[pix] = qimg->bits() + pix * CHANNELS;
+    if (img_format == FORMAT_RGB) {
+        rgb_data = new uint8_t*[size];
+        qimg = img_qimg;
+        for (int pix = 0; pix < size; pix++) {
+            rgb_data[pix] = qimg->bits() + pix * CHANNELS;
+        }
     }
 
     if (img_format == FORMAT_GRAY) {
         gray = new uint8_t[size];
         std::memcpy(gray, img_values, sizeof(uint8_t) * size);
     }
+
     if (img_format == FORMAT_BIN) {
         bin = new uint8_t[size];
         std::memcpy(bin, img_values, sizeof(uint8_t) * size);
@@ -144,6 +149,9 @@ int Image::height() {
 
 
 void Image::createGray() {
+    if (rgb_data == nullptr) {
+        throw ("rgb_data is nullptr");
+    }
     gray = new uint8_t[size];
     for (int pix = 0; pix < size; pix++) {
         gray[pix] = int(GRAY_R * rgb_data[pix][RED] + GRAY_G * rgb_data[pix][GREEN] + GRAY_B * rgb_data[pix][BLUE]);
@@ -152,7 +160,7 @@ void Image::createGray() {
 
 void Image::createBin() {
     if (gray == nullptr) {
-        createGray();
+        throw ("gray is nullptr");
     }
     bin = new uint8_t[size];
     for (int pix = 0; pix < size; pix++) {
@@ -183,11 +191,10 @@ Image Image::Bin() {
 
 
 QImage Image::Image2QImage(int format) {
-    if (qimg == nullptr) {
-        return QImage();
-    }
-
     if (format == FORMAT_RGB) {
+        if (qimg == nullptr) {
+            return QImage();
+        }
         return *qimg;
     }
     if (format == FORMAT_GRAY) {
@@ -216,43 +223,95 @@ int Image::multiply(uint8_t* img, double* kernel, double k) {
 }
 
 
-Image Image::conv(double* kernel, double k) {
-    if (gray == nullptr) {
-        createGray();
-    }
-
-    uint8_t new_img[size];
-    uint8_t matrix[KERNEL_SIZE];
+uint8_t* Image::conv(uint8_t* matrix, double* kernel, double k, int format) {
+    uint8_t* empty = new uint8_t[size];
+    uint8_t submatrix[KERNEL_SIZE];
 
     for (int y = 1; y < h - 1; y++) {
         for (int x = 1; x < w - 1; x++) {
-            int filled_rows = 0;
+            /*int filled_rows = 0;
             for (int i = y - 1; i < y + 2; i++) {
-                uint8_t* src = gray + sizeof(uint8_t) * (w * (y - 1) + x - 1);
+                uint8_t* src = values + sizeof(uint8_t) * (w * (y - 1) + x - 1);
                 uint8_t* dst = matrix + sizeof(uint8_t) * filled_rows * KERNEL_EDGE;
                 std::memcpy(dst, src, sizeof(uint8_t) * KERNEL_EDGE);
                 filled_rows++;
-            }
-            new_img[y*w+x] = multiply(matrix, kernel, k);
+            }*/
+            int cell = 0;
+                for (int i = y - 1; i < y + 2; i++) {
+                    for (int j = x - 1; j < x + 2; j++) {
+                        submatrix[cell] = matrix[i*w+j];
+                        cell++;
+                    }
+                }
+            empty[y*w+x] = multiply(submatrix, kernel, k);
         }
     }
-    return Image(new_img, w, h, FORMAT_GRAY, qimg);
+    return empty;
 }
 
 
-Image Image::sobel(bool vertical) {
-    double matrix_x[] = {1., 0., -1.,
-                         2., 0., -2.,
-                         1., 0., -1.};
+uint8_t* Image::gaussianBlur(int format) {
+    if (format == FORMAT_RGB) {
+        throw "wrong format";
+    }
+
+    uint8_t* values = nullptr;
+
+    if (format == FORMAT_GRAY) {
+        values = gray;
+    }
+    if (format == FORMAT_BIN) {
+        values = bin;
+    }
+
+    double matrix[] = {1., 2., 1.,
+                       2., 4., 2.,
+                       1., 2., 1.};
+
+    double k = 16;
+
+    return conv(values, matrix, k, format);
+}
+
+
+Image Image::GaussianBlur(int format) {
+    return Image(gaussianBlur(format), w, h, format);
+}
+
+
+uint8_t* Image::sobel(uint8_t* values, bool vertical, int format) {
+    if (format == FORMAT_RGB) {
+        throw "wrong format";
+    }
+
+    double matrix_x[] = {-1., 0., 1.,
+                         -2., 0., 2.,
+                         -1., 0., 1.};
 
     double matrix_y[] = { 1.,  2.,  1.,
                           0.,  0.,  0.,
                          -1., -2., -1.};
 
+    double k = 1;
+
     if (vertical) {
-        return conv(matrix_x, 1);
+        return conv(values, matrix_x, k, format);
     }
-    return conv(matrix_y, 1);
+    return conv(values, matrix_y, k, format);
+}
+
+
+Image Image::Sobel(bool vertical, int format) {
+    uint8_t* values = nullptr;
+
+    if (format == FORMAT_GRAY) {
+        values= gray;
+    }
+    if (format == FORMAT_BIN) {
+        values= bin;
+    }
+
+    return Image(sobel(values, vertical, format), w, h, format);
 }
 
 
@@ -264,8 +323,8 @@ bool Image::checkEdges(int x, int y, int h, int w) {
 }
 
 
-uint8_t* Image::findNeighbors(uint8_t* img, int x, int y, int w, int h) {
-    uint8_t* neighbors = new uint8_t[NEIGHBORS];
+uint16_t* Image::findNeighbors(uint16_t* img, int x, int y, int w, int h) {
+    uint16_t* neighbors = new uint16_t[NEIGHBORS];
 
     int cell = 0;
     for (int i = y - 1; i < y + 2; i++) {
@@ -274,7 +333,7 @@ uint8_t* Image::findNeighbors(uint8_t* img, int x, int y, int w, int h) {
                 continue;
             }
 
-            neighbors[cell] = checkEdges(j, i, h, w) ? img[i*w+j] : 0;
+            neighbors[cell] = checkEdges(j, i, w, h) ? img[i*w+j] : 0;
             cell++;
         }
     }
@@ -291,7 +350,7 @@ bool Image::checkNeighbors(uint8_t* img, int x, int y, int w, int h, bool find_h
                 continue;
             }
 
-            pixel = checkEdges(j, i, h, w) ? img[i*w+j] : 0;
+            pixel = checkEdges(j, i, w, h) ? img[i*w+j] : 0;
 
             if (pixel && find_high || !pixel && !find_high) {
                 return true;
@@ -361,7 +420,7 @@ bool Image::compareNeighbors(uint8_t* img, int x, int y, int w, int h, double k)
                 continue;
             }
 
-            nb = checkEdges(j, i, h, w) ? img[i*w+j] : 0;
+            nb = checkEdges(j, i, w, h) ? img[i*w+j] : 0;
             if (pixel < nb) {
                 return true;
             }
@@ -384,3 +443,93 @@ Image Image::fd(double k) {
     }
     return Image(empty, w, h, FORMAT_BIN, qimg);
 }
+
+
+uint8_t getGradientDirection(uint8_t x, uint8_t y) {
+    int angle = std::atan(y / double(x)) * 180 / M_PI;
+
+    if (-45 - 22.5 <= angle && angle < -45 + 22.5) {
+        return 1;
+    }
+    if (-22.5 <= angle && angle < 22.5) {
+        return 2;
+    }
+    if (45 - 22.5 <= angle && angle < 45 + 22.5) {
+        return 3;
+    }
+    return 0;
+}
+
+
+uint8_t suppressNonMax(uint16_t value, uint16_t* neigbors, uint8_t dir) {
+    uint16_t nb1 = 0;
+    uint16_t nb2 = 0;
+
+    if (dir == 0) {
+        nb1 = neigbors[1];
+        nb2 = neigbors[7];
+    }
+    if (dir == 1) {
+        nb1 = neigbors[0];
+        nb2 = neigbors[8];
+    }
+    if (dir == 2) {
+        nb1 = neigbors[3];
+        nb2 = neigbors[5];
+    }
+    if (dir == 2) {
+        nb1 = neigbors[2];
+        nb2 = neigbors[6];
+    }
+
+    return (value > nb1 && value > nb2) ? value : 0;
+}
+
+
+uint8_t* Image::doubleBorderFiltration(uint16_t* img, uint16_t bottom_val, uint16_t top_val) {
+    uint8_t* empty = new uint8_t[size];
+    for (int i = 0; i < size; i++) {
+        if (img[i] < bottom_val) {
+            empty[i] = 0;
+        }
+        else if (img[i] > top_val) {
+            empty[i] = 2;
+        }
+        else {
+            empty[i] = 1;
+        }
+    }
+    return empty;
+}
+
+
+Image Image::canny() {
+    uint8_t* gauss = gaussianBlur(FORMAT_BIN);
+
+    uint8_t* sobel_x = sobel(gauss, true, FORMAT_BIN);
+    uint8_t* sobel_y = sobel(gauss, false, FORMAT_BIN);
+    delete[] gauss;
+
+    uint16_t grad_val[size];
+    uint8_t grad_dir[size];
+    double atan;
+    for (int i = 0; i < size; i++) {
+        grad_val[i] = std::sqrt(sobel_x[i] * sobel_x[i] + sobel_y[i] * sobel_y[i]);
+        grad_dir[i] = getGradientDirection(sobel_x[i], sobel_y[i]);
+    }
+    delete[] sobel_x;
+    delete[] sobel_y;
+
+    uint8_t max[size];
+    for (int y = 0; y < h; y++) {
+        for (int x = 0; x < w; x++) {
+            uint16_t* neighbors = findNeighbors(grad_val, x, y, w, h);
+            max[w*y+x] = suppressNonMax(grad_val[w*y+x], neighbors, grad_dir[w*y+x]);
+            delete[] neighbors;
+        }
+    }
+    return Image();
+}
+
+
+
