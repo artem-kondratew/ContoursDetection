@@ -8,11 +8,11 @@ set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(QT NAMES Qt6 Qt5 COMPONENTS Widgets LinguistTools REQUIRED)
-find_package(Qt${QT_VERSION_MAJOR} COMPONENTS Widgets LinguistTools REQUIRED)
+find_package(QT NAMES Qt6 Qt5 COMPONENTS Widgets MultimediaWidgets Multimedia LinguistTools REQUIRED)
+find_package(Qt${QT_VERSION_MAJOR} COMPONENTS Widgets MultimediaWidgets Multimedia LinguistTools REQUIRED)
 
 set(TS_FILES ContoursDetection_ru_RU.ts)
 
@@ -54,6 +54,8 @@ else()
 endif()
 
 target_link_libraries(ContoursDetection PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
+target_link_libraries(ContoursDetection PRIVATE Qt${QT_VERSION_MAJOR}::Multimedia)
+target_link_libraries(ContoursDetection PRIVATE Qt${QT_VERSION_MAJOR}::MultimediaWidgets)
 
 set_target_properties(ContoursDetection PROPERTIES
     MACOSX_BUNDLE_GUI_IDENTIFIER my.example.com

@@ -5,64 +5,56 @@ Image::Image() {
     w = 0;
     h = 0;
     size = 0;
-    rgb_data = nullptr;
+    format = FORMAT_NULL;
+    rgb = nullptr;
     gray = nullptr;
     bin = nullptr;
-    qimg = nullptr;
 }
 
 
-Image::Image(QImage* qimage) {
+Image::Image(std::shared_ptr<QImage> qimage) {
+    if (qimage == nullptr) {
+        throw Exception("qimage is nullptr");
+    }
+
     w = qimage->width();
     h = qimage->height();
     size = h * w;
-    qimg = qimage;
+    format = FORMAT_RGB;
 
-    rgb_data = new uint8_t*[size];
+    rgb = std::shared_ptr<uint8_t[]>(new uint8_t[size*CHANNELS]);
+    std::memcpy(rgb.get(), qimage->bits(), sizeof(uint8_t) * size * CHANNELS);
 
     gray = nullptr;
     bin = nullptr;
-
-    for (int pix = 0; pix < size; pix++) {
-        rgb_data[pix] = qimg->bits() + pix * CHANNELS;
-    }
 }
 
 
-Image::Image(uint8_t* img_values, int img_w, int img_h,  int img_format, QImage* img_qimg) {
+Image::Image(std::shared_ptr<uint8_t[]> img_values, int img_w, int img_h,  int img_format) {
+    if (img_values == nullptr) {
+        throw Exception("rgb_values is nullptr");
+    }
+
     w = img_w;
     h = img_h;
     size = h * w;
-    qimg = nullptr;
+    format = img_format;
 
-    rgb_data = nullptr;
+    rgb = nullptr;
     gray = nullptr;
     bin = nullptr;
 
-    if (img_format == FORMAT_RGB) {
-        rgb_data = new uint8_t*[size];
-        qimg = img_qimg;
-        for (int pix = 0; pix < size; pix++) {
-            rgb_data[pix] = qimg->bits() + pix * CHANNELS;
-        }
+    if (format == FORMAT_RGB) {
+        rgb = img_values;
     }
 
-    if (img_format == FORMAT_GRAY) {
-        gray = new uint8_t[size];
-        std::memcpy(gray, img_values, sizeof(uint8_t) * size);
+    if (format == FORMAT_GRAY) {
+        gray = img_values;
     }
 
-    if (img_format == FORMAT_BIN) {
-        bin = new uint8_t[size];
-        std::memcpy(bin, img_values, sizeof(uint8_t) * size);
+    if (format == FORMAT_BIN) {
+        bin = img_values;
     }
-}
-
-
-Image::~Image() {
-    delete[] rgb_data;
-    delete[] gray;
-    delete[] bin;
 }
 
 
@@ -70,13 +62,10 @@ Image::Image(const Image& other) {
     w = other.w;
     h = other.h;
     size = other.size;
-    delete[] rgb_data;
-    delete[] gray;
-    delete[] bin;
-    rgb_data = other.rgb_data;
+    format = other.format;
+    rgb = other.rgb;
     gray = other.gray;
     bin = other.bin;
-    qimg = other.qimg;
 }
 
 
@@ -84,17 +73,13 @@ Image::Image(Image&& other) {
     w = other.w;
     h = other.h;
     size = other.size;
-    delete[] rgb_data;
-    delete[] gray;
-    delete[] bin;
-    rgb_data = other.rgb_data;
+    format = other.format;
+    rgb = other.rgb;
     gray = other.gray;
     bin = other.bin;
-    qimg = other.qimg;
-    other.rgb_data = nullptr;
-    other.qimg = nullptr;
-    other.gray = nullptr;
-    other.bin = nullptr;
+    other.rgb.reset();
+    other.gray.reset();
+    other.bin.reset();
 }
 
 
@@ -105,13 +90,10 @@ Image& Image::operator=(const Image& other) {
     w = other.w;
     h = other.h;
     size = other.size;
-    delete[] rgb_data;
-    delete[] gray;
-    delete[] bin;
-    rgb_data = other.rgb_data;
+    format = other.format;
+    rgb = other.rgb;
     gray = other.gray;
     bin = other.bin;
-    qimg = other.qimg;
     return *this;
 }
 
@@ -123,54 +105,56 @@ Image& Image::operator=(Image&& other) {
     w = other.w;
     h = other.h;
     size = other.size;
-    delete[] rgb_data;
-    delete[] gray;
-    delete[] bin;
-    rgb_data = other.rgb_data;
+    format = other.format;
+    rgb = other.rgb;
     gray = other.gray;
     bin = other.bin;
-    qimg = other.qimg;
-    other.rgb_data = nullptr;
-    other.gray = nullptr;
-    other.bin = nullptr;
-    other.qimg = nullptr;
+    other.rgb.reset();
+    other.gray.reset();
+    other.bin.reset();
     return *this;
 }
 
 
-int Image::width() {
+int Image::Width() {
     return w;
 }
 
 
-int Image::height() {
+int Image::Height() {
     return h;
 }
 
 
+int Image::Format() {
+    return format;
+}
+
+
 void Image::createGray() {
-    if (rgb_data == nullptr) {
-        throw ("rgb_data is nullptr");
+    if (rgb == nullptr) {
+        throw Exception("rgb_data is nullptr");
     }
-    gray = new uint8_t[size];
+    gray = std::shared_ptr<uint8_t[]>(new uint8_t[size]);
     for (int pix = 0; pix < size; pix++) {
-        gray[pix] = int(GRAY_R * rgb_data[pix][RED] + GRAY_G * rgb_data[pix][GREEN] + GRAY_B * rgb_data[pix][BLUE]);
+        gray[pix] = int(GRAY_R * rgb[3*pix+RED] + GRAY_G * rgb[3*pix+GREEN] + GRAY_B * rgb[3*pix+BLUE]);
     }
 }
 
-void Image::createBin() {
+
+void Image::createBin(uint8_t threshold) {
     if (gray == nullptr) {
-        throw ("gray is nullptr");
+        throw Exception("gray is nullptr");
     }
-    bin = new uint8_t[size];
+    bin = std::shared_ptr<uint8_t[]>(new uint8_t[size]);
     for (int pix = 0; pix < size; pix++) {
-        bin[pix] = (gray[pix] > BIN_THRESHOLD) ? 255 : 0;
+        bin[pix] = (gray[pix] > threshold) ? HIGH : LOW;
     }
 }
 
 
-Image Image::Rgb() {   
-    return Image(nullptr, w, h, FORMAT_RGB, qimg);
+Image Image::Rgb() {
+    return Image(rgb, w, h, FORMAT_RGB);
 }
 
 
@@ -178,64 +162,64 @@ Image Image::Gray() {
     if (gray == nullptr) {
         createGray();
     }
-    return Image(gray, w, h, FORMAT_GRAY, qimg);
+    return Image(gray, w, h, FORMAT_GRAY);
 }
 
 
-Image Image::Bin() {
+Image Image::Bin(uint8_t threshold) {
     if (bin == nullptr) {
-        createBin();
+        createBin(threshold);
     }
-    return Image(bin, w, h, FORMAT_BIN, qimg);
+    return Image(bin, w, h, FORMAT_BIN);
 }
 
 
 QImage Image::Image2QImage(int format) {
     if (format == FORMAT_RGB) {
-        if (qimg == nullptr) {
-            return QImage();
+        if (rgb == nullptr) {
+            throw Exception("rgb is nullptr");
         }
-        return *qimg;
+        return QImage(rgb.get(), w, h, QImage::Format_RGB888);
     }
     if (format == FORMAT_GRAY) {
         if (gray == nullptr) {
-            createGray();
+            throw Exception("gray is nullptr");
         }
-        return QImage(gray, w, h, QImage::Format_Grayscale8);
+        return QImage(gray.get(), w, h, QImage::Format_Grayscale8);
     }
     if (format == FORMAT_BIN) {
         if (bin == nullptr) {
-            createBin();
+            throw Exception("bin is nullptr");
         }
-        return QImage(bin, w, h, QImage::Format_Grayscale8);
+        return QImage(bin.get(), w, h, QImage::Format_Grayscale8);
     }
-
-    return QImage();
+    throw Exception("wrong format input");
 }
 
 
-int Image::multiply(uint8_t* img, double* kernel, double k) {
+bool Image::isNull() {
+    return format == FORMAT_NULL;
+}
+
+
+int Image::multiply(const uint8_t* submatrix, double* kernel, int kernel_size, double k) {
     double sum = 0;
-    for (int i = 0; i < KERNEL_SIZE; i++) {
-        sum += img[i] * kernel[i];
+    for (int i = 0; i < kernel_size; i++) {
+        sum += submatrix[i] * kernel[i];
     }
-    return sum / k;
+    int res = std::abs(sum / k);
+    return res > HIGH ? HIGH : res;
 }
 
 
-uint8_t* Image::conv(uint8_t* matrix, double* kernel, double k, int format) {
-    uint8_t* empty = new uint8_t[size];
-    uint8_t submatrix[KERNEL_SIZE];
+std::shared_ptr<uint8_t[]> Image::convolution(const uint8_t* matrix, double* kernel, double k) {
+    int kernel_edge = 3;
+    int kernel_size = kernel_edge * kernel_edge;
+    std::shared_ptr<uint8_t[]> empty(new uint8_t[size]);
+    uint8_t submatrix[kernel_size];
 
     for (int y = 1; y < h - 1; y++) {
         for (int x = 1; x < w - 1; x++) {
-            /*int filled_rows = 0;
-            for (int i = y - 1; i < y + 2; i++) {
-                uint8_t* src = values + sizeof(uint8_t) * (w * (y - 1) + x - 1);
-                uint8_t* dst = matrix + sizeof(uint8_t) * filled_rows * KERNEL_EDGE;
-                std::memcpy(dst, src, sizeof(uint8_t) * KERNEL_EDGE);
-                filled_rows++;
-            }*/
             int cell = 0;
                 for (int i = y - 1; i < y + 2; i++) {
                     for (int j = x - 1; j < x + 2; j++) {
@@ -243,34 +227,113 @@ uint8_t* Image::conv(uint8_t* matrix, double* kernel, double k, int format) {
                         cell++;
                     }
                 }
-            empty[y*w+x] = multiply(submatrix, kernel, k);
+            empty[y*w+x] = multiply(submatrix, kernel, kernel_size, k);
         }
     }
     return empty;
 }
 
 
-uint8_t* Image::gaussianBlur(int format) {
-    if (format == FORMAT_RGB) {
-        throw "wrong format";
+std::shared_ptr<uint8_t[]> Image::multiplyRgb(const uint8_t* submatrix, double* kernel, int kernel_size, double k) {
+    std::shared_ptr<uint8_t[]> sum(new uint8_t[CHANNELS]);
+    memset(sum.get(), 0, CHANNELS);
+
+    for (int i = 0; i < kernel_size; i++) {
+        sum[RED] += submatrix[3*i+RED] * kernel[i];
+        sum[GREEN] += submatrix[3*i+GREEN] * kernel[i];
+        sum[BLUE] += submatrix[3*i+BLUE] * kernel[i];
     }
+
+    for (int i = 0; i < CHANNELS; i++) {
+        int res = std::abs(sum[i] / k);
+        sum[i] = res > HIGH ? HIGH : res;
+    }
+
+    return sum;
+}
+
+
+std::shared_ptr<uint8_t[]> Image::convolutionRgb(const uint8_t* matrix, double* kernel, double k) {
+    int kernel_edge = 3;
+    int kernel_size = kernel_edge * kernel_edge;
+    std::shared_ptr<uint8_t[]> empty(new uint8_t[size*CHANNELS]);
+    uint8_t* submatrix = new uint8_t[kernel_size * CHANNELS];
+
+    for (int y = 1; y < h - 1; y++) {
+        for (int x = 1; x < w - 1; x++) {
+            int cell = 0;
+                for (int i = y - 1; i < y + 2; i++) {
+                    for (int j = x - 1; j < x + 2; j++) {
+                        std::memcpy(submatrix + sizeof(uint8_t) * cell, matrix + sizeof(uint8_t) * (i * w + j), sizeof(uint8_t) * CHANNELS);
+                        cell++;
+                    }
+                }
+            std::memcpy(empty.get() + sizeof(uint8_t) * (y * w + x), multiplyRgb(submatrix, kernel, kernel_size, k).get(), sizeof(uint8_t) * CHANNELS);
+        }
+    }
+    return empty;
+}
+
+
+Image Image::Convolution(double *kernel, double k) {
+    if (format == FORMAT_RGB) {
+        return Image(convolutionRgb(rgb.get(), kernel, k), w, h, format);
+    }
+    if (format == FORMAT_GRAY) {
+        return Image(convolution(gray.get(), kernel, k), w, h, format);
+    }
+    if (format == FORMAT_BIN) {
+        return Image(convolution(bin.get(), kernel, k), w, h, format);
+    }
+    throw Exception("wrong format input");
+}
+
+
+std::shared_ptr<uint8_t[]> Image::gaussianBlur(int format) {
+    double matrix3[] = {1., 2., 1.,
+                        2., 4., 2.,
+                        1., 2., 1.};
+
+    double k3 = 16.;
+
+    if (format == FORMAT_RGB) {
+        throw Exception("rgb is not supported");
+    }
+
+    /*if (format == FORMAT_RGB) {
+        std::shared_ptr<uint8_t[]> values(new uint8_t[size*CHANNELS]);
+        std::shared_ptr<uint8_t[]> r(new uint8_t[size]);
+        std::shared_ptr<uint8_t[]> g(new uint8_t[size]);
+        std::shared_ptr<uint8_t[]> b(new uint8_t[size]);
+        for (int i = 0; i < size; i++) {
+            r[i] = rgb[3*i+RED];
+            g[i] = rgb[3*i+GREEN];
+            b[i] = rgb[3*i+BLUE];
+        }
+        r = convolution(r.get(), matrix3, k3);
+        g = convolution(g.get(), matrix3, k3);
+        b = convolution(b.get(), matrix3, k3);
+        for (int i = 0; i < size; i++) {
+            values[3*i+RED] = r[i];
+            values[3*i+GREEN] = g[i];
+            values[3*i+BLUE] = b[i];
+        }
+        return values;
+    }*/
 
     uint8_t* values = nullptr;
 
     if (format == FORMAT_GRAY) {
-        values = gray;
+        values = gray.get();
     }
-    if (format == FORMAT_BIN) {
-        values = bin;
+    else if (format == FORMAT_BIN) {
+        values = bin.get();
+    }
+    else {
+        throw Exception("wrong format input");
     }
 
-    double matrix[] = {1., 2., 1.,
-                       2., 4., 2.,
-                       1., 2., 1.};
-
-    double k = 16;
-
-    return conv(values, matrix, k, format);
+    return convolution(values, matrix3, k3);
 }
 
 
@@ -279,43 +342,46 @@ Image Image::GaussianBlur(int format) {
 }
 
 
-uint8_t* Image::sobel(uint8_t* values, bool vertical, int format) {
-    if (format == FORMAT_RGB) {
-        throw "wrong format";
-    }
-
+std::shared_ptr<uint8_t[]> Image::sobel(uint8_t* values, bool vertical) {
     double matrix_x[] = {-1., 0., 1.,
-                         -2., 0., 2.,
-                         -1., 0., 1.};
+                           -2., 0., 2.,
+                           -1., 0., 1.};
 
     double matrix_y[] = { 1.,  2.,  1.,
-                          0.,  0.,  0.,
-                         -1., -2., -1.};
+                            0.,  0.,  0.,
+                           -1., -2., -1.};
 
     double k = 1;
 
     if (vertical) {
-        return conv(values, matrix_x, k, format);
+        return convolution(values, matrix_x, k);
     }
-    return conv(values, matrix_y, k, format);
+    return convolution(values, matrix_y, k);
 }
 
 
 Image Image::Sobel(bool vertical, int format) {
     uint8_t* values = nullptr;
 
-    if (format == FORMAT_GRAY) {
-        values= gray;
-    }
-    if (format == FORMAT_BIN) {
-        values= bin;
+    if (format == FORMAT_RGB) {
+        throw Exception("rgb is not supported");
     }
 
-    return Image(sobel(values, vertical, format), w, h, format);
+    if (format == FORMAT_GRAY) {
+        values = gray.get();
+    }
+    else if (format == FORMAT_BIN) {
+        values = bin.get();
+    }
+    else {
+        throw Exception("wrong format input");
+    }
+
+    return Image(sobel(values, vertical), w, h, format);
 }
 
 
-bool Image::checkEdges(int x, int y, int h, int w) {
+bool Image::checkEdges(int x, int y, int w, int h) {
     if (y < 0  || x < 0 || h <= y || w <= x) {
         return false;
     }
@@ -323,8 +389,8 @@ bool Image::checkEdges(int x, int y, int h, int w) {
 }
 
 
-uint16_t* Image::findNeighbors(uint16_t* img, int x, int y, int w, int h) {
-    uint16_t* neighbors = new uint16_t[NEIGHBORS];
+std::shared_ptr<uint16_t[]> Image::findNeighbors(const uint16_t* img, int x, int y, int w, int h) {
+    std::shared_ptr<uint16_t[]> neighbors(new uint16_t[NEIGHBORS]);
 
     int cell = 0;
     for (int i = y - 1; i < y + 2; i++) {
@@ -333,7 +399,7 @@ uint16_t* Image::findNeighbors(uint16_t* img, int x, int y, int w, int h) {
                 continue;
             }
 
-            neighbors[cell] = checkEdges(j, i, w, h) ? img[i*w+j] : 0;
+            neighbors[cell] = checkEdges(j, i, w, h) ? img[i*w+j] : LOW;
             cell++;
         }
     }
@@ -341,18 +407,34 @@ uint16_t* Image::findNeighbors(uint16_t* img, int x, int y, int w, int h) {
 }
 
 
-bool Image::checkNeighbors(uint8_t* img, int x, int y, int w, int h, bool find_high) {
-    uint8_t pixel;
+std::shared_ptr<uint8_t[]> Image::findNeighbors(const uint8_t* img, int x, int y, int w, int h) {
+    std::shared_ptr<uint8_t[]> neighbors(new uint8_t[NEIGHBORS]);
 
+    int cell = 0;
     for (int i = y - 1; i < y + 2; i++) {
         for (int j = x - 1; j < x + 2; j++) {
             if (i == y && j == x) {
                 continue;
             }
 
-            pixel = checkEdges(j, i, w, h) ? img[i*w+j] : 0;
+            neighbors[cell] = checkEdges(j, i, w, h) ? img[i*w+j] : LOW;
+            cell++;
+        }
+    }
+    return neighbors;
+}
 
-            if (pixel && find_high || !pixel && !find_high) {
+
+bool Image::checkNeighbors(const uint8_t* img, int x, int y, int w, int h, uint8_t key) {
+    for (int i = y - 1; i < y + 2; i++) {
+        for (int j = x - 1; j < x + 2; j++) {
+            if (i == y && j == x) {
+                continue;
+            }
+
+            uint8_t pixel = checkEdges(j, i, w, h) ? img[i*w+j] : LOW;
+
+            if (pixel == key) {
                 return true;
             }
         }
@@ -361,56 +443,56 @@ bool Image::checkNeighbors(uint8_t* img, int x, int y, int w, int h, bool find_h
 }
 
 
-Image Image::externalContouring() {
-    uint8_t empty[size];
-    memset(empty, 0, size);
+Image Image::ExternalContouring() {
+    std::shared_ptr<uint8_t[]> empty(new uint8_t[size]);
+    memset(empty.get(), LOW, size);
 
     for (int y = 0; y < h; y++) {
         for (int x = 0; x < w; x++) {
-            if (bin[y*w+x] == 255) {
-                empty[y*w+x] = 0;
+            if (bin[y*w+x] == HIGH) {
+                empty[y*w+x] = LOW;
                 continue;
             }
-            if (checkNeighbors(bin, x, y, w, h, true)) {
-                empty[y*w+x] = 255;
+            if (checkNeighbors(bin.get(), x, y, w, h, HIGH)) {
+                empty[y*w+x] = HIGH;
             }
         }
     }
-    return Image(empty, w, h, FORMAT_BIN, qimg);
+    return Image(empty, w, h, FORMAT_BIN);
 }
 
 
-Image Image::dilate() {
-    uint8_t empty[size];
-    memset(empty, 0, size);
+Image Image::Dilate() {
+    std::shared_ptr<uint8_t[]> dilate(new uint8_t[size]);
+    memset(dilate.get(), LOW, size);
 
     for (int y = 0; y < h; y++) {
         for (int x = 0; x < w; x++) {
-            if (checkNeighbors(bin, x, y, w, h, true)) {
-                empty[y*w+x] = 255;
+            if (checkNeighbors(bin.get(), x, y, w, h, HIGH)) {
+                dilate[y*w+x] = HIGH;
             }
         }
     }
-    return Image(empty, w, h, FORMAT_BIN, qimg);
+    return Image(dilate, w, h, FORMAT_BIN);
 }
 
 
-Image Image::erode() {
-    uint8_t empty[size];
-    std::memcpy(empty, bin, size);
+Image Image::Erode() {
+    std::shared_ptr<uint8_t[]> erode(new uint8_t[size]);
+    std::memcpy(erode.get(), bin.get(), size);
 
     for (int y = 0; y < h; y++) {
         for (int x = 0; x < w; x++) {
-            if (checkNeighbors(bin, x, y, w, h, false)) {
-                empty[y*w+x] = 0;
+            if (checkNeighbors(bin.get(), x, y, w, h, LOW)) {
+                erode[y*w+x] = LOW;
             }
         }
     }
-    return Image(empty, w, h, FORMAT_BIN, qimg);
+    return Image(erode, w, h, FORMAT_BIN);
 }
 
 
-bool Image::compareNeighbors(uint8_t* img, int x, int y, int w, int h, double k) {
+bool Image::compareNeighbors(const uint8_t* img, int x, int y, int w, int h, double k) {
     uint8_t pixel = int(k * img[y*w+x]);
     uint8_t nb;
 
@@ -420,7 +502,7 @@ bool Image::compareNeighbors(uint8_t* img, int x, int y, int w, int h, double k)
                 continue;
             }
 
-            nb = checkEdges(j, i, w, h) ? img[i*w+j] : 0;
+            nb = checkEdges(j, i, w, h) ? img[i*w+j] : LOW;
             if (pixel < nb) {
                 return true;
             }
@@ -430,23 +512,24 @@ bool Image::compareNeighbors(uint8_t* img, int x, int y, int w, int h, double k)
 }
 
 
-Image Image::fd(double k) {
-    uint8_t empty[size];
-    memset(empty, 0, size);
+Image Image::FindDark(double k) {
+    std::shared_ptr<uint8_t[]> fd(new uint8_t[size]);
+    memset(fd.get(), LOW, size);
 
     for (int y = 0; y < h; y++) {
         for (int x = 0; x < w; x++) {
-            if (compareNeighbors(gray, x, y, w, h, k)) {
-                empty[y*w+x] = 255;
+            if (compareNeighbors(gray.get(), x, y, w, h, k)) {
+                fd[y*w+x] = HIGH;
             }
         }
     }
-    return Image(empty, w, h, FORMAT_BIN, qimg);
+    return Image(fd, w, h, FORMAT_BIN);
 }
 
 
-uint8_t getGradientDirection(uint8_t x, uint8_t y) {
-    int angle = std::atan(y / double(x)) * 180 / M_PI;
+uint8_t Image::getGradientDirection(uint8_t x, uint8_t y) {
+    double rad = std::atan(y / double(x));
+    int angle = rad * 180 / M_PI;
 
     if (-45 - 22.5 <= angle && angle < -45 + 22.5) {
         return 1;
@@ -461,54 +544,90 @@ uint8_t getGradientDirection(uint8_t x, uint8_t y) {
 }
 
 
-uint8_t suppressNonMax(uint16_t value, uint16_t* neigbors, uint8_t dir) {
-    uint16_t nb1 = 0;
-    uint16_t nb2 = 0;
+uint16_t Image::suppressNonMax(const uint16_t* neighbors, uint16_t value, uint8_t dir) {
+    uint16_t nb1 = LOW;
+    uint16_t nb2 = LOW;
 
     if (dir == 0) {
-        nb1 = neigbors[1];
-        nb2 = neigbors[7];
+        nb1 = neighbors[1];
+        nb2 = neighbors[6];
     }
-    if (dir == 1) {
-        nb1 = neigbors[0];
-        nb2 = neigbors[8];
+    else if (dir == 1) {
+        nb1 = neighbors[0];
+        nb2 = neighbors[7];
     }
-    if (dir == 2) {
-        nb1 = neigbors[3];
-        nb2 = neigbors[5];
+    else if (dir == 2) {
+        nb1 = neighbors[3];
+        nb2 = neighbors[4];
     }
-    if (dir == 2) {
-        nb1 = neigbors[2];
-        nb2 = neigbors[6];
+    else if (dir == 3) {
+        nb1 = neighbors[2];
+        nb2 = neighbors[5];
     }
 
-    return (value > nb1 && value > nb2) ? value : 0;
+    if (nb1 < value && value == nb2 || nb1 == value && value > nb2) {
+        return LOW;
+    }
+
+    return (value < nb1 || value < nb2) ? LOW : value;
+    /*if (value <= nb1) {
+        return 0;
+    }
+    if (value <= nb2) {
+        return 0;
+    }
+    return value;*/
 }
 
 
-uint8_t* Image::doubleBorderFiltration(uint16_t* img, uint16_t bottom_val, uint16_t top_val) {
-    uint8_t* empty = new uint8_t[size];
+std::shared_ptr<uint8_t[]> Image::doubleThreshold(const uint16_t* img, uint16_t lower_threshold, uint16_t upper_threshold) {
+    if (lower_threshold >= upper_threshold) {
+        throw Exception("wrong thresholds");
+    }
+
+    std::shared_ptr<uint8_t[]> empty(new uint8_t[size]);
     for (int i = 0; i < size; i++) {
-        if (img[i] < bottom_val) {
+        if (img[i] < lower_threshold) {
             empty[i] = 0;
+            continue;
         }
-        else if (img[i] > top_val) {
+        if (img[i] > upper_threshold) {
             empty[i] = 2;
+            continue;
         }
-        else {
-            empty[i] = 1;
-        }
+        empty[i] = 1;
     }
     return empty;
 }
 
 
-Image Image::canny() {
-    uint8_t* gauss = gaussianBlur(FORMAT_BIN);
+std::shared_ptr<uint8_t[]> Image::checkStrongIds(const uint8_t* db_threshold) {
+    std::shared_ptr<uint8_t[]> empty(new uint8_t[size]);
 
-    uint8_t* sobel_x = sobel(gauss, true, FORMAT_BIN);
-    uint8_t* sobel_y = sobel(gauss, false, FORMAT_BIN);
-    delete[] gauss;
+    for (int y = 0; y < h; y++) {
+        for (int x = 0; x < w; x++) {
+            if (db_threshold[y*w+x] == 1 && checkNeighbors(db_threshold, x, y, w, h, 2) || db_threshold[y*w+x] == 2) {
+                empty[y*w+x] = HIGH;
+            }
+            else {
+                empty[y*w+x] = LOW;
+            }
+        }
+    }
+
+    return empty;
+}
+
+
+Image Image::Canny(uint16_t lower_threshold, uint16_t upper_threshold) {
+    if (format != FORMAT_GRAY) {
+        throw Exception("wrong format");
+    }
+
+    std::shared_ptr<uint8_t[]> gauss(gaussianBlur(FORMAT_GRAY));
+
+    std::shared_ptr<uint8_t[]> sobel_x(sobel(gauss.get(), true));
+    std::shared_ptr<uint8_t[]> sobel_y(sobel(gauss.get(), false));
 
     uint16_t grad_val[size];
     uint8_t grad_dir[size];
@@ -517,19 +636,179 @@ Image Image::canny() {
         grad_val[i] = std::sqrt(sobel_x[i] * sobel_x[i] + sobel_y[i] * sobel_y[i]);
         grad_dir[i] = getGradientDirection(sobel_x[i], sobel_y[i]);
     }
-    delete[] sobel_x;
-    delete[] sobel_y;
 
-    uint8_t max[size];
+    std::shared_ptr<uint16_t[]> max(new uint16_t[size]);
     for (int y = 0; y < h; y++) {
         for (int x = 0; x < w; x++) {
-            uint16_t* neighbors = findNeighbors(grad_val, x, y, w, h);
-            max[w*y+x] = suppressNonMax(grad_val[w*y+x], neighbors, grad_dir[w*y+x]);
-            delete[] neighbors;
+            std::shared_ptr<uint16_t[]> neighbors = findNeighbors(grad_val, x, y, w, h);
+            max[y*w+x] = suppressNonMax(neighbors.get(), grad_val[y*w+x], grad_dir[y*w+x]);
         }
     }
-    return Image();
+
+    std::shared_ptr<uint8_t[]> db_threshold = doubleThreshold(max.get(), lower_threshold, upper_threshold);
+
+    std::shared_ptr<uint8_t[]> canny = checkStrongIds(db_threshold.get());
+
+    /*std::shared_ptr<uint8_t[]> check_gauss(new uint8_t[size*3]);
+    for (int i = 0; i < size; i++) {
+        check_gauss[3*i] = gauss[i];
+        check_gauss[3*i+1] = gauss[i];
+        check_gauss[3*i+2] = gauss[i];
+    }*/
+
+    /*std::shared_ptr<uint8_t[]> check_sobel_x(new uint8_t[size*3]);
+    for (int i = 0; i < size; i++) {
+        check_sobel_x[3*i] = sobel_x[i];
+        check_sobel_x[3*i+1] = sobel_x[i];
+        check_sobel_x[3*i+2] = sobel_x[i];
+    }*/
+
+    /*std::shared_ptr<uint8_t[]> check_sobel_y(new uint8_t[size*3]);
+    for (int i = 0; i < size; i++) {
+        check_sobel_y[3*i] = sobel_y[i];
+        check_sobel_y[3*i+1] = sobel_y[i];
+        check_sobel_y[3*i+2] = sobel_y[i];
+    }*/
+
+    /*std::shared_ptr<uint8_t[]> check_grad_val(new uint8_t[size*3]);
+    memset(check_grad_val.get(), 0, size);
+    for (int i = 0; i < size; i++) {
+        if (grad_val[i] > 255) {//r
+            check_grad_val[3*i] = 255;
+            check_grad_val[3*i+1] = 255;
+            check_grad_val[3*i+2] = 255;
+        }
+        else {
+            check_grad_val[3*i] = grad_val[i];
+            check_grad_val[3*i+1] = grad_val[i];
+            check_grad_val[3*i+2] = grad_val[i];
+        }
+    }*/
+
+    /*std::shared_ptr<uint8_t[]> check_grad_val_color(new uint8_t[size*3]);
+    memset(check_grad_val_color.get(), 0, size);
+    for (int i = 0; i < size; i++) {
+        if (grad_val[i] > 255) {//r
+            check_grad_val_color[i*3] = 255;
+        }
+        if (255 > grad_val[i] && grad_val[i] > 0) {//g
+            check_grad_val_color[i*3+1] = 255;
+        }
+        if (grad_val[i] == 0) {//b
+            check_grad_val_color[i*3+2] = 255;
+        }
+        if (grad_val[i] == 255) {//p
+            check_grad_val_color[i*3] = 255;
+            check_grad_val_color[i*3+2] = 255;
+        }
+    }*/
+
+    /*std::shared_ptr<uint8_t[]> check_grad_dir(new uint8_t[size*3]);
+    memset(check_grad_dir.get(), 0, size);
+    for (int i = 0; i < size; i++) {
+        if (grad_dir[i] == 0) {//r
+            check_grad_dir[i*3] = 255;
+        }
+        if (grad_dir[i] == 1) {//g
+            check_grad_dir[i*3+1] = 255;
+        }
+        if (grad_dir[i] == 2) {//b
+            check_grad_dir[i*3+2] = 255;
+        }
+        if (grad_dir[i] == 3) {//p
+            check_grad_dir[i*3] = 255;
+            check_grad_dir[i*3+2] = 255;
+        }
+    }*/
+
+    /*std::shared_ptr<uint8_t[]> check_max(new uint8_t[size*3]);
+    memset(check_max.get(), 0, size);
+    for (int i = 0; i < size; i++) {
+        if (max[i] > 255) {
+            check_max[i*3] = 255;
+            check_max[i*3+1] = 255;
+            check_max[i*3+2] = 255;
+        }
+        else {
+            check_max[i*3] = max[i];
+            check_max[i*3+1] = max[i];
+            check_max[i*3+2] = max[i];
+        }
+    }*/
+
+    /*std::shared_ptr<uint8_t[]> check_max_color(new uint8_t[size*3]);
+    memset(check_max_color.get(), 0, size);
+    for (int i = 0; i < size; i++) {
+        if (max[i] > 255) {//r
+            check_max_color[i*3] = 255;
+        }
+        if (255 > max[i] && max[i] > 0) {//g
+            check_max_color[i*3+1] = 255;
+        }
+        if (max[i] == 0) {//b
+            check_max_color[i*3+2] = 255;
+        }
+        if (max[i] == 255) {//p
+            check_max_color[i*3] = 255;
+            check_max_color[i*3+2] = 255;
+        }
+    }*/
+
+
+    /*std::shared_ptr<uint8_t[]> check_threshold(new uint8_t[size*3]);
+    memset(check_threshold.get(), 0, size);
+    for (int i = 0; i < size; i++) {
+        if (db_threshold[i] == 2) {//r
+            check_threshold[i*3] = 255;
+        }
+        if (db_threshold[i] == 1) {//g
+            check_threshold[i*3+1] = 255;
+        }
+        if (db_threshold[i] == 0) {//b
+            check_threshold[i*3+2] = 255;
+        }
+    }*/
+
+
+    /*std::shared_ptr<uint8_t[]> check_canny(new uint8_t[size*3]);
+    for (int i = 0; i < size; i++) {
+        check_canny[i*3] = canny[i];
+        check_canny[i*3+1] = canny[i];
+        check_canny[i*3+2] = canny[i];
+    }*/
+
+    return Image(canny, w, h, FORMAT_BIN);
 }
 
 
+Image Image::Flip(bool vertical) {
+    if (format == FORMAT_RGB) {
+        throw Exception("rgb is not supported");
+    }
 
+    std::shared_ptr<uint8_t[]> flip(new uint8_t[size]);
+    uint8_t* values;
+
+    if (format == FORMAT_GRAY) {
+        values = gray.get();
+    }
+    if (format == FORMAT_BIN) {
+        values = bin.get();
+    }
+
+    if (vertical) {
+        for (int i = 0; i < h; i++) {
+            uint8_t* src = values + sizeof(uint8_t) * (size - w * (1 + i));
+            uint8_t* dst = flip.get() + sizeof(uint8_t) * w * i;
+            std::memcpy(dst, src, sizeof(uint8_t) * w);
+        }
+        return Image(flip, w, h, format);
+    }
+    else {
+        std::memcpy(flip.get(), values, sizeof(uint8_t) * size);
+        for (int i = 0; i < h; i++) {
+            std::reverse(flip.get() + sizeof(uint8_t) * w * i, flip.get() + sizeof(uint8_t) * w * (i + 1));
+        }
+        return Image(flip, w, h, format);
+    }
+}
