@@ -69,7 +69,7 @@ Image::Image(const Image& other) {
 }
 
 
-Image::Image(Image&& other) {
+Image::Image(Image&& other) noexcept {
     w = other.w;
     h = other.h;
     size = other.size;
@@ -98,7 +98,7 @@ Image& Image::operator=(const Image& other) {
 }
 
 
-Image& Image::operator=(Image&& other) {
+Image& Image::operator=(Image&& other) noexcept {
     if (this == &other) {
         return *this;
     }
@@ -146,9 +146,24 @@ void Image::createBin(uint8_t threshold) {
     if (gray == nullptr) {
         throw Exception("gray is nullptr");
     }
+
     bin = std::shared_ptr<uint8_t[]>(new uint8_t[size]);
-    for (int pix = 0; pix < size; pix++) {
-        bin[pix] = (gray[pix] > threshold) ? HIGH : LOW;
+
+    /*for (int pix = 0; pix < size; pix++) {
+        bin[pix] = gray[pix] >= threshold ? HIGH : LOW;
+    }*/
+
+    __m128i thr = _mm_set1_epi8(threshold);
+    __m128i high = _mm_set1_epi8((uint8_t)HIGH);
+    __m128i low = _mm_set1_epi8((uint8_t)LOW);
+
+    for (int pix = 0; pix < size; pix += 16) {
+        __m128i in_reg = _mm_loadu_si128((__m128i*)(gray.get() + pix));
+
+        __m128i mask = _mm_cmpeq_epi8( in_reg, _mm_max_epu8(in_reg, thr));
+        __m128i out_reg = _mm_blendv_epi8(low, high, mask);
+
+        _mm_storeu_si128((__m128i*)(bin.get() + pix), out_reg);
     }
 }
 
@@ -202,17 +217,17 @@ bool Image::isNull() {
 }
 
 
-int Image::multiply(const uint8_t* submatrix, double* kernel, int kernel_size, double k) {
+/*int Image::multiply(const uint8_t* submatrix, const double* kernel, int kernel_size, double k) {
     double sum = 0;
     for (int i = 0; i < kernel_size; i++) {
         sum += submatrix[i] * kernel[i];
     }
     int res = std::abs(sum / k);
     return res > HIGH ? HIGH : res;
-}
+}*/
 
 
-std::shared_ptr<uint8_t[]> Image::convolution(const uint8_t* matrix, double* kernel, double k) {
+std::shared_ptr<uint8_t[]> Image::convolution(const uint8_t* matrix, const double* kernel, double k) {
     int kernel_edge = 3;
     int kernel_size = kernel_edge * kernel_edge;
     std::shared_ptr<uint8_t[]> empty(new uint8_t[size]);
@@ -227,48 +242,13 @@ std::shared_ptr<uint8_t[]> Image::convolution(const uint8_t* matrix, double* ker
                         cell++;
                     }
                 }
-            empty[y*w+x] = multiply(submatrix, kernel, kernel_size, k);
-        }
-    }
-    return empty;
-}
-
-
-std::shared_ptr<uint8_t[]> Image::multiplyRgb(const uint8_t* submatrix, double* kernel, int kernel_size, double k) {
-    std::shared_ptr<uint8_t[]> sum(new uint8_t[CHANNELS]);
-    memset(sum.get(), 0, CHANNELS);
-
-    for (int i = 0; i < kernel_size; i++) {
-        sum[RED] += submatrix[3*i+RED] * kernel[i];
-        sum[GREEN] += submatrix[3*i+GREEN] * kernel[i];
-        sum[BLUE] += submatrix[3*i+BLUE] * kernel[i];
-    }
-
-    for (int i = 0; i < CHANNELS; i++) {
-        int res = std::abs(sum[i] / k);
-        sum[i] = res > HIGH ? HIGH : res;
-    }
-
-    return sum;
-}
-
-
-std::shared_ptr<uint8_t[]> Image::convolutionRgb(const uint8_t* matrix, double* kernel, double k) {
-    int kernel_edge = 3;
-    int kernel_size = kernel_edge * kernel_edge;
-    std::shared_ptr<uint8_t[]> empty(new uint8_t[size*CHANNELS]);
-    uint8_t* submatrix = new uint8_t[kernel_size * CHANNELS];
-
-    for (int y = 1; y < h - 1; y++) {
-        for (int x = 1; x < w - 1; x++) {
-            int cell = 0;
-                for (int i = y - 1; i < y + 2; i++) {
-                    for (int j = x - 1; j < x + 2; j++) {
-                        std::memcpy(submatrix + sizeof(uint8_t) * cell, matrix + sizeof(uint8_t) * (i * w + j), sizeof(uint8_t) * CHANNELS);
-                        cell++;
-                    }
-                }
-            std::memcpy(empty.get() + sizeof(uint8_t) * (y * w + x), multiplyRgb(submatrix, kernel, kernel_size, k).get(), sizeof(uint8_t) * CHANNELS);
+            //empty[y*w+x] = multiply(submatrix, kernel, kernel_size, k);
+            double sum = 0;
+            for (int i = 0; i < kernel_size; i++) {
+                sum += submatrix[i] * kernel[i];
+            }
+            int res = std::abs(sum / k);
+            empty[y*w+x] = res > HIGH ? HIGH : res;
         }
     }
     return empty;
@@ -277,7 +257,7 @@ std::shared_ptr<uint8_t[]> Image::convolutionRgb(const uint8_t* matrix, double* 
 
 Image Image::Convolution(double *kernel, double k) {
     if (format == FORMAT_RGB) {
-        return Image(convolutionRgb(rgb.get(), kernel, k), w, h, format);
+        throw Exception("rgb is not supported");
     }
     if (format == FORMAT_GRAY) {
         return Image(convolution(gray.get(), kernel, k), w, h, format);
@@ -299,41 +279,13 @@ std::shared_ptr<uint8_t[]> Image::gaussianBlur(int format) {
     if (format == FORMAT_RGB) {
         throw Exception("rgb is not supported");
     }
-
-    /*if (format == FORMAT_RGB) {
-        std::shared_ptr<uint8_t[]> values(new uint8_t[size*CHANNELS]);
-        std::shared_ptr<uint8_t[]> r(new uint8_t[size]);
-        std::shared_ptr<uint8_t[]> g(new uint8_t[size]);
-        std::shared_ptr<uint8_t[]> b(new uint8_t[size]);
-        for (int i = 0; i < size; i++) {
-            r[i] = rgb[3*i+RED];
-            g[i] = rgb[3*i+GREEN];
-            b[i] = rgb[3*i+BLUE];
-        }
-        r = convolution(r.get(), matrix3, k3);
-        g = convolution(g.get(), matrix3, k3);
-        b = convolution(b.get(), matrix3, k3);
-        for (int i = 0; i < size; i++) {
-            values[3*i+RED] = r[i];
-            values[3*i+GREEN] = g[i];
-            values[3*i+BLUE] = b[i];
-        }
-        return values;
-    }*/
-
-    uint8_t* values = nullptr;
-
     if (format == FORMAT_GRAY) {
-        values = gray.get();
+        return convolution(gray.get(), matrix3, k3);
     }
-    else if (format == FORMAT_BIN) {
-        values = bin.get();
+    if (format == FORMAT_BIN) {
+        return convolution(bin.get(), matrix3, k3);
     }
-    else {
-        throw Exception("wrong format input");
-    }
-
-    return convolution(values, matrix3, k3);
+    throw Exception("wrong format input");
 }
 
 
@@ -570,13 +522,6 @@ uint16_t Image::suppressNonMax(const uint16_t* neighbors, uint16_t value, uint8_
     }
 
     return (value < nb1 || value < nb2) ? LOW : value;
-    /*if (value <= nb1) {
-        return 0;
-    }
-    if (value <= nb2) {
-        return 0;
-    }
-    return value;*/
 }
 
 
@@ -645,6 +590,42 @@ Image Image::Canny(uint16_t lower_threshold, uint16_t upper_threshold) {
         }
     }
 
+    std::shared_ptr<uint8_t[]> db_threshold = doubleThreshold(max.get(), lower_threshold, upper_threshold);
+
+    std::shared_ptr<uint8_t[]> canny = checkStrongIds(db_threshold.get());
+
+    return Image(canny, w, h, FORMAT_BIN);
+}
+
+
+Image Image::debug_canny() {
+    if (format != FORMAT_GRAY) {
+        throw Exception("wrong format");
+    }
+
+    std::shared_ptr<uint8_t[]> gauss(gaussianBlur(FORMAT_GRAY));
+
+    std::shared_ptr<uint8_t[]> sobel_x(sobel(gauss.get(), true));
+    std::shared_ptr<uint8_t[]> sobel_y(sobel(gauss.get(), false));
+
+    uint16_t grad_val[size];
+    uint8_t grad_dir[size];
+    double atan;
+    for (int i = 0; i < size; i++) {
+        grad_val[i] = std::sqrt(sobel_x[i] * sobel_x[i] + sobel_y[i] * sobel_y[i]);
+        grad_dir[i] = getGradientDirection(sobel_x[i], sobel_y[i]);
+    }
+
+    std::shared_ptr<uint16_t[]> max(new uint16_t[size]);
+    for (int y = 0; y < h; y++) {
+        for (int x = 0; x < w; x++) {
+            std::shared_ptr<uint16_t[]> neighbors = findNeighbors(grad_val, x, y, w, h);
+            max[y*w+x] = suppressNonMax(neighbors.get(), grad_val[y*w+x], grad_dir[y*w+x]);
+        }
+    }
+
+    uint16_t lower_threshold = 10;
+    uint16_t upper_threshold = 50;
     std::shared_ptr<uint8_t[]> db_threshold = doubleThreshold(max.get(), lower_threshold, upper_threshold);
 
     std::shared_ptr<uint8_t[]> canny = checkStrongIds(db_threshold.get());

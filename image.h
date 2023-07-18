@@ -2,6 +2,10 @@
 #define IMAGE_H
 
 
+#pragma GCC target("avx")
+
+
+#include <immintrin.h>
 #include <cmath>
 #include <cstring>
 #include <memory>
@@ -63,9 +67,9 @@ public:
     Image(std::shared_ptr<uint8_t[]>, int img_w, int img_h, int img_format);
     ~Image() = default;
     Image(const Image &other);
-    Image(Image &&other);
+    Image(Image &&other) noexcept;
     Image& operator=(const Image &other);
-    Image& operator=(Image &&other);
+    Image& operator=(Image &&other) noexcept;
 
     int Width();
     int Height();
@@ -85,11 +89,8 @@ public:
     bool isNull();
 
 private:
-    int multiply(const uint8_t* submatrix, double* kernel, int kernel_size, double k);
-    std::shared_ptr<uint8_t[]> convolution(const uint8_t*  values, double* kernel, double k);
-
-    std::shared_ptr<uint8_t[]> multiplyRgb(const uint8_t* submatrix, double* kernel, int kernel_size, double k);
-    std::shared_ptr<uint8_t[]> convolutionRgb(const uint8_t*  values, double* kernel, double k);
+    int multiply(const uint8_t* submatrix, const double* kernel, int kernel_size, double k);
+    std::shared_ptr<uint8_t[]> convolution(const uint8_t* matrix, const double* kernel, double k);
 
 public:
     Image Convolution(double* kernel, double k);
@@ -133,6 +134,7 @@ private:
 
 public:
     Image Canny(uint16_t lower_threshold=LOWER_THRESHOLD, uint16_t upper_threshold=UPPER_THRESHOLD);
+    Image debug_canny();
 
     Image Flip(bool vertical);
 };
