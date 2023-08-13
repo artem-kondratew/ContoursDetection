@@ -12,6 +12,9 @@
 #include <QMainWindow>
 
 
+inline std::string alpha;
+
+
 #define GRAY_R 0.299
 #define GRAY_G 0.587
 #define GRAY_B 0.114
@@ -89,11 +92,10 @@ public:
     bool isNull();
 
 private:
-    int multiply(const uint8_t* submatrix, const double* kernel, int kernel_size, double k);
-    std::shared_ptr<uint8_t[]> convolution(const uint8_t* matrix, const double* kernel, double k);
+    std::shared_ptr<uint8_t[]> convolution(const uint8_t* matrix, const float* kernel);
 
 public:
-    Image Convolution(double* kernel, double k);
+    Image Convolution(float* kernel);
 
 private:
     std::shared_ptr<uint8_t[]> gaussianBlur(int format);
@@ -102,18 +104,20 @@ public:
     Image GaussianBlur(int format);
 
 private:
+    std::shared_ptr<uint8_t[]> add_uint8_arrays(const uint8_t* arr1, const uint8_t* arr2, int size);
     std::shared_ptr<uint8_t[]> sobel(uint8_t* values, bool vertical);
 
 public:
     Image Sobel(bool vertical, int format);
 
 private:
-    bool checkEdges(int x, int y, int w, int h);
+    bool checkEdges(int x, int y);
 
-    std::shared_ptr<uint16_t[]> findNeighbors(const uint16_t* img, int x, int y, int w, int h);
-    std::shared_ptr<uint8_t[]> findNeighbors(const uint8_t* img, int x, int y, int w, int h);
+    std::shared_ptr<__m128i[]> findNeighborsSimd(const uint16_t* img, int x, int y);
 
-    bool checkNeighbors(const uint8_t* img, int x, int y, int w, int h, uint8_t key);
+    std::shared_ptr<uint16_t[]> findNeighbors(const uint16_t* img, int x, int y);
+
+    bool checkNeighbors(const uint8_t* img, int x, int y, uint8_t key);
 
 public:
     Image ExternalContouring();
@@ -121,21 +125,22 @@ public:
     Image Erode();
 
 private:
-    bool compareNeighbors(const uint8_t* img, int x, int y, int w, int h, double k);
+    bool cmpltPixelNeighbors(const uint8_t* img, int x, int y, double k);
 
 public:
     Image FindDark(double k=1.0);
 
 private:
-    uint8_t getGradientDirection(uint8_t x, uint8_t y);
-    uint16_t suppressNonMax(const uint16_t* neighbors, uint16_t value, uint8_t dir);
+    std::shared_ptr<uint16_t[]> getGradientValues(const uint8_t* sobel_x, const uint8_t* sobel_y);
+    std::shared_ptr<uint16_t[]> getGradientDirection(const uint8_t* sobel_x, const uint8_t* sobel_y);
+
+    std::shared_ptr<uint16_t[]> suppressNonMax(const uint16_t* grad_val, const uint16_t* grad_dir);
+
     std::shared_ptr<uint8_t[]> doubleThreshold(const uint16_t* img, uint16_t bottom_val, uint16_t top_val);
     std::shared_ptr<uint8_t[]> checkStrongIds(const uint8_t* db_threshold);
 
 public:
     Image Canny(uint16_t lower_threshold=LOWER_THRESHOLD, uint16_t upper_threshold=UPPER_THRESHOLD);
-    Image debug_canny();
-
     Image Flip(bool vertical);
 };
 

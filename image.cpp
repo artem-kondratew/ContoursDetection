@@ -142,7 +142,7 @@ void Image::createGray() {
 }
 
 
-void Image::createBin(uint8_t threshold) {
+void Image::createBin(uint8_t threshold_value) {
     if (gray == nullptr) {
         throw Exception("gray is nullptr");
     }
@@ -153,15 +153,15 @@ void Image::createBin(uint8_t threshold) {
         bin[pix] = gray[pix] >= threshold ? HIGH : LOW;
     }*/
 
-    __m128i thr = _mm_set1_epi8(threshold);
-    __m128i high = _mm_set1_epi8((uint8_t)HIGH);
-    __m128i low = _mm_set1_epi8((uint8_t)LOW);
+    __m128i reg_threshold = _mm_set1_epi8(threshold_value);
+    __m128i reg_high = _mm_set1_epi8((uint8_t)HIGH);
+    __m128i reg_low = _mm_set1_epi8((uint8_t)LOW);
 
     for (int pix = 0; pix < size; pix += 16) {
-        __m128i in_reg = _mm_loadu_si128((__m128i*)(gray.get() + pix));
+        __m128i reg_in = _mm_loadu_si128((__m128i*)(gray.get() + pix));
 
-        __m128i mask = _mm_cmpeq_epi8( in_reg, _mm_max_epu8(in_reg, thr));
-        __m128i out_reg = _mm_blendv_epi8(low, high, mask);
+        __m128i reg_mask = _mm_cmpeq_epi8(reg_in, _mm_max_epu8(reg_in, reg_threshold));
+        __m128i out_reg = _mm_blendv_epi8(reg_low, reg_high, reg_mask);
 
         _mm_storeu_si128((__m128i*)(bin.get() + pix), out_reg);
     }
@@ -217,17 +217,83 @@ bool Image::isNull() {
 }
 
 
-/*int Image::multiply(const uint8_t* submatrix, const double* kernel, int kernel_size, double k) {
-    double sum = 0;
+__m128i mul_int32x4_floatx4(__m128i reg_int32, __m128 reg_float) {
+        __m128 reg_float_from_int32 = _mm_cvtepi32_ps(reg_int32);
+    __m128 reg_mul = _mm_mul_ps(reg_float_from_int32, reg_float);
+    __m128i reg_mul_to_int32 = _mm_cvtps_epi32(reg_mul);
+    return reg_mul_to_int32;
+}
+
+
+std::shared_ptr<uint8_t[]> Image::convolution(const uint8_t* matrix, const float* kernel) {
+    int kernel_size = 9;
+    std::shared_ptr<uint8_t[]> empty(new uint8_t[size]);
+    memset(empty.get(), 0, size);
+
+    __m128 simd_kernel[kernel_size];
     for (int i = 0; i < kernel_size; i++) {
-        sum += submatrix[i] * kernel[i];
+        simd_kernel[i] = _mm_set1_ps(kernel[i]);
     }
-    int res = std::abs(sum / k);
-    return res > HIGH ? HIGH : res;
-}*/
 
+    __m128i submatrix[kernel_size];
 
-std::shared_ptr<uint8_t[]> Image::convolution(const uint8_t* matrix, const double* kernel, double k) {
+    __m128i reg_high = _mm_set1_epi32(255);
+
+    int main_w = w - 16;
+
+    for (int y = 1; y < h - 1; y++) {
+        for (int x = 1; x < main_w; x += 4) {
+
+            int pix_ptr = w * y + x;
+
+            submatrix[0] = _mm_loadu_si128((__m128i*)(matrix + pix_ptr - w - 1));
+            submatrix[1] = _mm_loadu_si128((__m128i*)(matrix + pix_ptr - w));
+            submatrix[2] = _mm_loadu_si128((__m128i*)(matrix + pix_ptr - w + 1));
+
+            submatrix[3] = _mm_loadu_si128((__m128i*)(matrix + pix_ptr - 1));
+            submatrix[4] = _mm_loadu_si128((__m128i*)(matrix + pix_ptr));
+            submatrix[5] = _mm_loadu_si128((__m128i*)(matrix + pix_ptr + 1));
+
+            submatrix[6] = _mm_loadu_si128((__m128i*)(matrix + pix_ptr + w - 1));
+            submatrix[7] = _mm_loadu_si128((__m128i*)(matrix + pix_ptr + w));
+            submatrix[8] = _mm_loadu_si128((__m128i*)(matrix + pix_ptr + w + 1));
+
+            __m128i reg_mul;
+            __m128i reg_sum = _mm_set1_epi32(0);
+
+            for (int i = 0; i < kernel_size; i++) {
+                reg_mul = mul_int32x4_floatx4(_mm_cvtepu8_epi32(submatrix[i]), simd_kernel[i]);
+                reg_sum = _mm_add_epi32(reg_sum, reg_mul);
+            }
+
+            __m128i mask_upper_threshold = _mm_cmpgt_epi32(reg_sum, reg_high);
+            __m128i reg_upper_threshold = _mm_blendv_epi8(reg_sum, reg_high, mask_upper_threshold);
+
+            __m128i reg16 = _mm_packus_epi32(reg_upper_threshold, reg_upper_threshold);
+            __m128i reg8 = _mm_packus_epi16(reg16, reg16);
+
+            _mm_storeu_si128((__m128i*)(empty.get() + pix_ptr), reg8);
+        }
+
+        uint8_t sub[kernel_size];
+        for (int x = main_w; x < w - 1; x++) {
+            int cell = 0;
+            for (int i = y - 1; i < y + 2; i++) {
+                for (int j = x - 1; j < x + 2; j++) {
+                    sub[cell] = matrix[i * w + j];
+                    cell++;
+                }
+            }
+            float sum = 0;
+            for (int i = 0; i < kernel_size; i++) {
+                sum += (float)sub[i] * kernel[i];
+            }
+            empty[y * w + x] = sum > 255 ? 255 : sum;
+        }
+    }
+    return empty;
+
+    /*
     int kernel_edge = 3;
     int kernel_size = kernel_edge * kernel_edge;
     std::shared_ptr<uint8_t[]> empty(new uint8_t[size]);
@@ -242,48 +308,46 @@ std::shared_ptr<uint8_t[]> Image::convolution(const uint8_t* matrix, const doubl
                         cell++;
                     }
                 }
-            //empty[y*w+x] = multiply(submatrix, kernel, kernel_size, k);
             double sum = 0;
             for (int i = 0; i < kernel_size; i++) {
                 sum += submatrix[i] * kernel[i];
             }
-            int res = std::abs(sum / k);
+            int res = std::abs(sum);
             empty[y*w+x] = res > HIGH ? HIGH : res;
         }
     }
     return empty;
+    */
 }
 
 
-Image Image::Convolution(double *kernel, double k) {
+Image Image::Convolution(float *kernel) {
     if (format == FORMAT_RGB) {
         throw Exception("rgb is not supported");
     }
     if (format == FORMAT_GRAY) {
-        return Image(convolution(gray.get(), kernel, k), w, h, format);
+        return Image(convolution(gray.get(), kernel), w, h, format);
     }
     if (format == FORMAT_BIN) {
-        return Image(convolution(bin.get(), kernel, k), w, h, format);
+        return Image(convolution(bin.get(), kernel), w, h, format);
     }
     throw Exception("wrong format input");
 }
 
 
 std::shared_ptr<uint8_t[]> Image::gaussianBlur(int format) {
-    double matrix3[] = {1., 2., 1.,
-                        2., 4., 2.,
-                        1., 2., 1.};
-
-    double k3 = 16.;
+    float matrix[] = {0.0625, 0.1250, 0.0625,
+                        0.1250, 0.2500, 0.1250,
+                        0.0625, 0.1250, 0.0625};
 
     if (format == FORMAT_RGB) {
         throw Exception("rgb is not supported");
     }
     if (format == FORMAT_GRAY) {
-        return convolution(gray.get(), matrix3, k3);
+        return convolution(gray.get(), matrix);
     }
     if (format == FORMAT_BIN) {
-        return convolution(bin.get(), matrix3, k3);
+        return convolution(bin.get(), matrix);
     }
     throw Exception("wrong format input");
 }
@@ -294,21 +358,41 @@ Image Image::GaussianBlur(int format) {
 }
 
 
+std::shared_ptr<uint8_t[]> Image::add_uint8_arrays(const uint8_t* arr1, const uint8_t* arr2, int size) {
+    std::shared_ptr<uint8_t[]> sum(new uint8_t[size]);
+
+    for (int i = 0; i < size - 16; i += 16) {
+        __m128i reg1 = _mm_loadu_si128((__m128i*)(arr1+i));
+        __m128i reg2 = _mm_loadu_si128((__m128i*)(arr2+i));
+        __m128i reg_sum = _mm_adds_epu8(reg1, reg2);
+        _mm_storeu_si128((__m128i*)(sum.get() + i), reg_sum);
+    }
+
+    return sum;
+}
+
+
 std::shared_ptr<uint8_t[]> Image::sobel(uint8_t* values, bool vertical) {
-    double matrix_x[] = {-1., 0., 1.,
+    float matrix_x[] = {-1., 0., 1.,
                            -2., 0., 2.,
                            -1., 0., 1.};
 
-    double matrix_y[] = { 1.,  2.,  1.,
-                            0.,  0.,  0.,
-                           -1., -2., -1.};
+    float matrix_x_rev[] = {1., 0., -1.,
+                            2., 0., -2.,
+                            1., 0., -1.};
 
-    double k = 1;
+    float matrix_y[] = {1., 2., 1.,
+                        0., 0., 0.,
+                        -1., -2., -1.};
+
+    float matrix_y_rev[] = {-1., -2., -1.,
+                        0., 0., 0.,
+                        1., 2., 1.};
 
     if (vertical) {
-        return convolution(values, matrix_x, k);
+        return add_uint8_arrays(convolution(values, matrix_x).get(), convolution(values, matrix_x_rev).get(), size);
     }
-    return convolution(values, matrix_y, k);
+    return add_uint8_arrays(convolution(values, matrix_y).get(), convolution(values, matrix_y_rev).get(), size);
 }
 
 
@@ -333,7 +417,7 @@ Image Image::Sobel(bool vertical, int format) {
 }
 
 
-bool Image::checkEdges(int x, int y, int w, int h) {
+bool Image::checkEdges(int x, int y) {
     if (y < 0  || x < 0 || h <= y || w <= x) {
         return false;
     }
@@ -341,7 +425,53 @@ bool Image::checkEdges(int x, int y, int w, int h) {
 }
 
 
-std::shared_ptr<uint16_t[]> Image::findNeighbors(const uint16_t* img, int x, int y, int w, int h) {
+std::shared_ptr<__m128i[]> Image::findNeighborsSimd(const uint16_t* grad_val, int x, int y) {
+    std::shared_ptr<__m128i[]> neighbors(new __m128i[NEIGHBORS]);
+
+    int pix_ptr = w * y + x;
+
+    if (y == 0) {
+        neighbors[0] = _mm_set1_epi16(0);
+        neighbors[1] = _mm_set1_epi16(0);
+        neighbors[2] = _mm_set1_epi16(0);
+    }
+    else {
+        neighbors[0] = _mm_loadu_si128((__m128i*)(grad_val + pix_ptr - w - 1));
+        neighbors[1] = _mm_loadu_si128((__m128i*)(grad_val + pix_ptr - w));
+        neighbors[2] = _mm_loadu_si128((__m128i*)(grad_val + pix_ptr - w + 1));
+    }
+
+    if (x == 0) {
+        neighbors[0] = _mm_set1_epi16(0);
+        neighbors[3] = _mm_set1_epi16(0);
+        neighbors[5] = _mm_set1_epi16(0);
+    }
+    else {
+        neighbors[0] = _mm_loadu_si128((__m128i*)(grad_val + pix_ptr - w - 1));
+        neighbors[3] = _mm_loadu_si128((__m128i*)(grad_val + pix_ptr - 1));
+        neighbors[5] = _mm_loadu_si128((__m128i*)(grad_val + pix_ptr + w - 1));
+    }
+
+    if (y == h - 1) {
+        neighbors[5] = _mm_set1_epi16(0);
+        neighbors[6] = _mm_set1_epi16(0);
+        neighbors[7] = _mm_set1_epi16(0);
+    }
+    else {
+        neighbors[5] = _mm_loadu_si128((__m128i*)(grad_val + pix_ptr + w - 1));
+        neighbors[6] = _mm_loadu_si128((__m128i*)(grad_val + pix_ptr + w));
+        neighbors[7] = _mm_loadu_si128((__m128i*)(grad_val + pix_ptr + w + 1));
+    }
+
+    neighbors[2] = _mm_loadu_si128((__m128i*)(grad_val + pix_ptr - w + 1));
+    neighbors[4] = _mm_loadu_si128((__m128i*)(grad_val + pix_ptr + 1));
+    neighbors[7] = _mm_loadu_si128((__m128i*)(grad_val + pix_ptr + w + 1));
+
+    return neighbors;
+}
+
+
+std::shared_ptr<uint16_t[]> Image::findNeighbors(const uint16_t* img, int x, int y) {
     std::shared_ptr<uint16_t[]> neighbors(new uint16_t[NEIGHBORS]);
 
     int cell = 0;
@@ -351,7 +481,7 @@ std::shared_ptr<uint16_t[]> Image::findNeighbors(const uint16_t* img, int x, int
                 continue;
             }
 
-            neighbors[cell] = checkEdges(j, i, w, h) ? img[i*w+j] : LOW;
+            neighbors[cell] = checkEdges(j, i) ? img[i*w+j] : LOW;
             cell++;
         }
     }
@@ -359,32 +489,14 @@ std::shared_ptr<uint16_t[]> Image::findNeighbors(const uint16_t* img, int x, int
 }
 
 
-std::shared_ptr<uint8_t[]> Image::findNeighbors(const uint8_t* img, int x, int y, int w, int h) {
-    std::shared_ptr<uint8_t[]> neighbors(new uint8_t[NEIGHBORS]);
-
-    int cell = 0;
+bool Image::checkNeighbors(const uint8_t* img, int x, int y, uint8_t key) {
     for (int i = y - 1; i < y + 2; i++) {
         for (int j = x - 1; j < x + 2; j++) {
             if (i == y && j == x) {
                 continue;
             }
 
-            neighbors[cell] = checkEdges(j, i, w, h) ? img[i*w+j] : LOW;
-            cell++;
-        }
-    }
-    return neighbors;
-}
-
-
-bool Image::checkNeighbors(const uint8_t* img, int x, int y, int w, int h, uint8_t key) {
-    for (int i = y - 1; i < y + 2; i++) {
-        for (int j = x - 1; j < x + 2; j++) {
-            if (i == y && j == x) {
-                continue;
-            }
-
-            uint8_t pixel = checkEdges(j, i, w, h) ? img[i*w+j] : LOW;
+            uint8_t pixel = checkEdges(j, i) ? img[i*w+j] : LOW;
 
             if (pixel == key) {
                 return true;
@@ -405,7 +517,7 @@ Image Image::ExternalContouring() {
                 empty[y*w+x] = LOW;
                 continue;
             }
-            if (checkNeighbors(bin.get(), x, y, w, h, HIGH)) {
+            if (checkNeighbors(bin.get(), x, y, HIGH)) {
                 empty[y*w+x] = HIGH;
             }
         }
@@ -420,7 +532,7 @@ Image Image::Dilate() {
 
     for (int y = 0; y < h; y++) {
         for (int x = 0; x < w; x++) {
-            if (checkNeighbors(bin.get(), x, y, w, h, HIGH)) {
+            if (checkNeighbors(bin.get(), x, y, HIGH)) {
                 dilate[y*w+x] = HIGH;
             }
         }
@@ -435,7 +547,7 @@ Image Image::Erode() {
 
     for (int y = 0; y < h; y++) {
         for (int x = 0; x < w; x++) {
-            if (checkNeighbors(bin.get(), x, y, w, h, LOW)) {
+            if (checkNeighbors(bin.get(), x, y, LOW)) {
                 erode[y*w+x] = LOW;
             }
         }
@@ -444,7 +556,7 @@ Image Image::Erode() {
 }
 
 
-bool Image::compareNeighbors(const uint8_t* img, int x, int y, int w, int h, double k) {
+bool Image::cmpltPixelNeighbors(const uint8_t* img, int x, int y, double k) {
     uint8_t pixel = int(k * img[y*w+x]);
     uint8_t nb;
 
@@ -454,7 +566,7 @@ bool Image::compareNeighbors(const uint8_t* img, int x, int y, int w, int h, dou
                 continue;
             }
 
-            nb = checkEdges(j, i, w, h) ? img[i*w+j] : LOW;
+            nb = checkEdges(j, i) ? img[i*w+j] : LOW;
             if (pixel < nb) {
                 return true;
             }
@@ -470,7 +582,7 @@ Image Image::FindDark(double k) {
 
     for (int y = 0; y < h; y++) {
         for (int x = 0; x < w; x++) {
-            if (compareNeighbors(gray.get(), x, y, w, h, k)) {
+            if (cmpltPixelNeighbors(gray.get(), x, y, k)) {
                 fd[y*w+x] = HIGH;
             }
         }
@@ -479,49 +591,187 @@ Image Image::FindDark(double k) {
 }
 
 
-uint8_t Image::getGradientDirection(uint8_t x, uint8_t y) {
-    double rad = std::atan(y / double(x));
-    int angle = rad * 180 / M_PI;
+std::shared_ptr<uint16_t[]> Image::getGradientValues(const uint8_t* sobel_x, const uint8_t* sobel_y) {
+    std::shared_ptr<uint16_t[]> grad_val(new uint16_t[size]);
 
-    if (-45 - 22.5 <= angle && angle < -45 + 22.5) {
-        return 1;
+    for (int i = 0; i < size; i += 4) {
+        __m128i reg_sobel_x_int32 = _mm_cvtepu8_epi32(_mm_loadu_si128((__m128i*)(sobel_x + i)));
+        __m128i reg_sobel_y_int32 = _mm_cvtepu8_epi32(_mm_loadu_si128((__m128i*)(sobel_y + i)));
+
+        __m128 reg_sobel_x_float = _mm_cvtepi32_ps(reg_sobel_x_int32);
+        __m128 reg_sobel_y_float = _mm_cvtepi32_ps(reg_sobel_y_int32);
+
+        __m128 reg_squared_sobel_x_float = _mm_mul_ps(reg_sobel_x_float, reg_sobel_x_float);
+        __m128 reg_squared_sobel_y_float = _mm_mul_ps(reg_sobel_y_float, reg_sobel_y_float);
+
+        __m128 reg_grad_val_float = _mm_sqrt_ps(_mm_add_ps(reg_squared_sobel_x_float, reg_squared_sobel_y_float));
+        __m128i reg_grad_val_int32 = _mm_cvtps_epi32(reg_grad_val_float);
+
+        __m128i reg_grad_val_int16 = _mm_packus_epi32(reg_grad_val_int32, reg_grad_val_int32);
+
+        _mm_storeu_si128((__m128i*)(grad_val.get() + i), reg_grad_val_int16);
     }
-    if (-22.5 <= angle && angle < 22.5) {
-        return 2;
-    }
-    if (45 - 22.5 <= angle && angle < 45 + 22.5) {
-        return 3;
-    }
-    return 0;
+
+    return grad_val;
 }
 
 
-uint16_t Image::suppressNonMax(const uint16_t* neighbors, uint16_t value, uint8_t dir) {
-    uint16_t nb1 = LOW;
-    uint16_t nb2 = LOW;
+std::shared_ptr<uint16_t[]> Image::getGradientDirection(const uint8_t* sobel_x, const uint8_t* sobel_y) {
+    std::shared_ptr<uint16_t[]> grad_dir(new uint16_t[size]);
+    float rad[8];
 
-    if (dir == 0) {
-        nb1 = neighbors[1];
-        nb2 = neighbors[6];
-    }
-    else if (dir == 1) {
-        nb1 = neighbors[0];
-        nb2 = neighbors[7];
-    }
-    else if (dir == 2) {
-        nb1 = neighbors[3];
-        nb2 = neighbors[4];
-    }
-    else if (dir == 3) {
-        nb1 = neighbors[2];
-        nb2 = neighbors[5];
+    __m128 rad2deg = _mm_set1_ps(180 / M_PI);
+
+    __m128i angle_m_67 = _mm_set1_epi32(-67);
+    __m128i angle_m_23 = _mm_set1_epi32(-23);
+    __m128i angle_p_23 = _mm_set1_epi32(+23);
+    __m128i angle_p_67 = _mm_set1_epi32(+67);
+
+    __m128i dir_1 = _mm_set1_epi32(1);
+    __m128i dir_2 = _mm_set1_epi32(2);
+    __m128i dir_3 = _mm_set1_epi32(3);
+
+    for (int i = 0; i < size; i += 8) {
+        for (int j = 0; j < 8; j++) {
+            rad[j] = std::atan(sobel_y[i+j] / float(sobel_x[i+j]));
+        }
+
+        __m128 reg_rad_first = _mm_loadu_ps(rad);
+        __m128 reg_rad_last = _mm_loadu_ps(rad + 4);
+
+        __m128 angle_float_first = _mm_mul_ps(reg_rad_first, rad2deg);
+        __m128 angle_float_last = _mm_mul_ps(reg_rad_last, rad2deg);
+
+        __m128i angle_f = _mm_cvtps_epi32(angle_float_first);
+        __m128i angle_l = _mm_cvtps_epi32(angle_float_last);
+
+        __m128i dir_f = _mm_set1_epi32(0);
+        __m128i dir_l = _mm_set1_epi32(0);
+
+        __m128i mask_dir_1_f = _mm_andnot_si128(_mm_cmpgt_epi32(angle_m_67, angle_f), _mm_cmplt_epi32(angle_f, angle_m_23));
+        __m128i mask_dir_2_f = _mm_andnot_si128(_mm_cmpgt_epi32(angle_m_23, angle_f), _mm_cmplt_epi32(angle_f, angle_p_23));
+        __m128i mask_dir_3_f = _mm_andnot_si128(_mm_cmpgt_epi32(angle_p_23, angle_f), _mm_cmplt_epi32(angle_f, angle_p_67));
+
+        __m128i mask_dir_1_l = _mm_andnot_si128(_mm_cmpgt_epi32(angle_m_67, angle_l), _mm_cmplt_epi32(angle_l, angle_m_23));
+        __m128i mask_dir_2_l = _mm_andnot_si128(_mm_cmpgt_epi32(angle_m_23, angle_l), _mm_cmplt_epi32(angle_l, angle_p_23));
+        __m128i mask_dir_3_l = _mm_andnot_si128(_mm_cmpgt_epi32(angle_p_23, angle_l), _mm_cmplt_epi32(angle_l, angle_p_67));
+
+        dir_f = _mm_blendv_epi8(dir_f, dir_1, mask_dir_1_f);
+        dir_f = _mm_blendv_epi8(dir_f, dir_2, mask_dir_2_f);
+        dir_f = _mm_blendv_epi8(dir_f, dir_3, mask_dir_3_f);
+
+        dir_l = _mm_blendv_epi8(dir_l, dir_1, mask_dir_1_l);
+        dir_l = _mm_blendv_epi8(dir_l, dir_2, mask_dir_2_l);
+        dir_l = _mm_blendv_epi8(dir_l, dir_3, mask_dir_3_l);
+
+        __m128i dir_int16_f = _mm_packus_epi32(dir_f, dir_f);
+        __m128i dir_int16_l = _mm_packus_epi32(dir_l, dir_l);
+
+        _mm_storeu_si128((__m128i*)(grad_dir.get() + i), dir_int16_f);
+        _mm_storeu_si128((__m128i*)(grad_dir.get() + i + 4), dir_int16_l);
+
+        /*
+        float rad = std::atan(sobel_y[i] / float(sobel_x[i]));
+        int angle = rad * 180 / M_PI;
+
+        if (-67 <= angle && angle < -23) {
+            grad_dir[i] = 1;
+            continue;
+        }
+        if (-23 <= angle && angle < 23) {
+            grad_dir[i] = 2;
+            continue;
+        }
+        if (23 <= angle && angle < 67) {
+            grad_dir[i] = 3;
+            continue;
+        }
+        grad_dir[i] = 0;*/
     }
 
-    if (nb1 < value && value == nb2 || nb1 == value && value > nb2) {
-        return LOW;
+    return grad_dir;
+}
+
+
+std::shared_ptr<uint16_t[]> Image::suppressNonMax(const uint16_t* grad_val, const uint16_t* grad_dir) {
+    std::shared_ptr<uint16_t[]> max(new uint16_t[size]);
+
+    for (int y = 0; y < h; y++) {
+        for (int x = 0; x < w - 8; x += 8) {
+            int idx = w * y + x;
+            std::shared_ptr<__m128i[]> neighbors = findNeighborsSimd(grad_val, x, y);
+
+            __m128i nb1 = _mm_set1_epi16(LOW);
+            __m128i nb2 = _mm_set1_epi16(LOW);
+
+            __m128i values = _mm_loadu_si128((__m128i*)(grad_val + idx));
+            __m128i dirs = _mm_loadu_si128((__m128i*)(grad_dir + idx));
+
+            __m128i dir_0 = _mm_set1_epi16(0);
+            __m128i dir_1 = _mm_set1_epi16(1);
+            __m128i dir_2 = _mm_set1_epi16(2);
+            __m128i dir_3 = _mm_set1_epi16(3);
+
+            __m128i low = _mm_set1_epi16(LOW);
+
+            __m128i dir_0_mask = _mm_cmpeq_epi16(dirs, dir_0);
+            __m128i dir_1_mask = _mm_cmpeq_epi16(dirs, dir_1);
+            __m128i dir_2_mask = _mm_cmpeq_epi16(dirs, dir_2);
+            __m128i dir_3_mask = _mm_cmpeq_epi16(dirs, dir_3);
+
+            nb1 = _mm_blendv_epi8(nb1, neighbors[1], dir_0_mask);
+            nb2 = _mm_blendv_epi8(nb2, neighbors[6], dir_0_mask);
+
+            nb1 = _mm_blendv_epi8(nb1, neighbors[0], dir_1_mask);
+            nb2 = _mm_blendv_epi8(nb2, neighbors[7], dir_1_mask);
+
+            nb1 = _mm_blendv_epi8(nb1, neighbors[3], dir_2_mask);
+            nb2 = _mm_blendv_epi8(nb2, neighbors[4], dir_2_mask);
+
+            nb1 = _mm_blendv_epi8(nb1, neighbors[2], dir_3_mask);
+            nb2 = _mm_blendv_epi8(nb2, neighbors[5], dir_3_mask);
+
+            __m128i cmp = _mm_or_si128(_mm_cmpgt_epi16(nb1, values), _mm_cmpgt_epi16(nb2, values));
+            __m128i reg_max = _mm_blendv_epi8(values, low, cmp);
+
+            _mm_storeu_si128((__m128i*)(max.get() + idx), reg_max);
+        }
+
+        for (int x = w - 8; x < w; x++) {
+            std::shared_ptr<uint16_t[]> neighbors = findNeighbors(grad_val, x, y);
+
+            uint16_t nb1 = LOW;
+            uint16_t nb2 = LOW;
+
+            uint16_t value = grad_val[y*w+x];
+            uint16_t dir = grad_dir[y*w+x];
+
+            if (dir == 0) {
+                nb1 = neighbors[1];
+                nb2 = neighbors[6];
+            }
+            else if (dir == 1) {
+                nb1 = neighbors[0];
+                nb2 = neighbors[7];
+            }
+            else if (dir == 2) {
+                nb1 = neighbors[3];
+                nb2 = neighbors[4];
+            }
+            else if (dir == 3) {
+                nb1 = neighbors[2];
+                nb2 = neighbors[5];
+            }
+
+            if (nb1 < value && value == nb2 || nb1 == value && value > nb2) {
+                max[y*w+x] = LOW;
+            }
+
+            max[y*w+x] = value < nb1 || value < nb2 ? LOW : value;
+        }
     }
 
-    return (value < nb1 || value < nb2) ? LOW : value;
+    return max;
 }
 
 
@@ -531,7 +781,29 @@ std::shared_ptr<uint8_t[]> Image::doubleThreshold(const uint16_t* img, uint16_t 
     }
 
     std::shared_ptr<uint8_t[]> empty(new uint8_t[size]);
-    for (int i = 0; i < size; i++) {
+
+    __m128i reg_lower_threshold = _mm_set1_epi16((int16_t)lower_threshold);
+    __m128i reg_upper_threshold = _mm_set1_epi16((int16_t)upper_threshold);
+
+    __m128i reg_value_0 = _mm_set1_epi16(0);
+    __m128i reg_value_1 = _mm_set1_epi16(1);
+
+    for (int i = 0; i < size; i += 8) {
+        __m128i reg_image_values = _mm_loadu_si128((__m128i*)(img + i));
+
+        __m128i mask_lower_threshold = _mm_cmpgt_epi16(reg_lower_threshold, reg_image_values);
+        __m128i reg_lower_threshold_values = _mm_blendv_epi8(reg_value_1, reg_value_0, mask_lower_threshold);
+
+        __m128i mask_upper_threshold = _mm_cmpgt_epi16(reg_image_values, reg_upper_threshold);
+        __m128i reg_upper_threshold_values = _mm_blendv_epi8(reg_value_0, reg_value_1, mask_upper_threshold);
+
+        __m128i reg_db_threshold_values_int16 = _mm_add_epi16(reg_lower_threshold_values, reg_upper_threshold_values);
+        __m128i reg_db_threshold_values_int8 = _mm_packus_epi16(reg_db_threshold_values_int16, reg_db_threshold_values_int16);
+
+        _mm_storeu_si128((__m128i*)(empty.get() + i), reg_db_threshold_values_int8);
+    }
+
+    /*for (int i = 0; i < size; i++) {
         if (img[i] < lower_threshold) {
             empty[i] = 0;
             continue;
@@ -541,7 +813,8 @@ std::shared_ptr<uint8_t[]> Image::doubleThreshold(const uint16_t* img, uint16_t 
             continue;
         }
         empty[i] = 1;
-    }
+    }*/
+
     return empty;
 }
 
@@ -551,7 +824,7 @@ std::shared_ptr<uint8_t[]> Image::checkStrongIds(const uint8_t* db_threshold) {
 
     for (int y = 0; y < h; y++) {
         for (int x = 0; x < w; x++) {
-            if (db_threshold[y*w+x] == 1 && checkNeighbors(db_threshold, x, y, w, h, 2) || db_threshold[y*w+x] == 2) {
+            if (db_threshold[y*w+x] == 1 && checkNeighbors(db_threshold, x, y, 2) || db_threshold[y*w+x] == 2) {
                 empty[y*w+x] = HIGH;
             }
             else {
@@ -569,194 +842,59 @@ Image Image::Canny(uint16_t lower_threshold, uint16_t upper_threshold) {
         throw Exception("wrong format");
     }
 
+
+    auto start_timer_gauss = std::chrono::system_clock::now();
+
     std::shared_ptr<uint8_t[]> gauss(gaussianBlur(FORMAT_GRAY));
+
+    auto stop_timer_gauss = std::chrono::system_clock::now();
+
+
+    auto start_timer_sobel = std::chrono::system_clock::now();
 
     std::shared_ptr<uint8_t[]> sobel_x(sobel(gauss.get(), true));
     std::shared_ptr<uint8_t[]> sobel_y(sobel(gauss.get(), false));
 
-    uint16_t grad_val[size];
-    uint8_t grad_dir[size];
-    double atan;
-    for (int i = 0; i < size; i++) {
-        grad_val[i] = std::sqrt(sobel_x[i] * sobel_x[i] + sobel_y[i] * sobel_y[i]);
-        grad_dir[i] = getGradientDirection(sobel_x[i], sobel_y[i]);
-    }
+    auto stop_timer_sobel = std::chrono::system_clock::now();
 
-    std::shared_ptr<uint16_t[]> max(new uint16_t[size]);
-    for (int y = 0; y < h; y++) {
-        for (int x = 0; x < w; x++) {
-            std::shared_ptr<uint16_t[]> neighbors = findNeighbors(grad_val, x, y, w, h);
-            max[y*w+x] = suppressNonMax(neighbors.get(), grad_val[y*w+x], grad_dir[y*w+x]);
-        }
-    }
+
+    auto start_timer_grad = std::chrono::system_clock::now();
+
+    std::shared_ptr<uint16_t[]> grad_val = getGradientValues(sobel_x.get(), sobel_y.get());
+    std::shared_ptr<uint16_t[]> grad_dir = getGradientDirection(sobel_x.get(), sobel_y.get());
+
+    auto stop_timer_grad = std::chrono::system_clock::now();
+
+
+    auto start_timer_max = std::chrono::system_clock::now();
+
+    std::shared_ptr<uint16_t[]> max = suppressNonMax(grad_val.get(), grad_dir.get());
+
+    auto stop_timer_max = std::chrono::system_clock::now();
+
+
+    auto start_timer_thresh = std::chrono::system_clock::now();
 
     std::shared_ptr<uint8_t[]> db_threshold = doubleThreshold(max.get(), lower_threshold, upper_threshold);
 
     std::shared_ptr<uint8_t[]> canny = checkStrongIds(db_threshold.get());
 
-    return Image(canny, w, h, FORMAT_BIN);
-}
+    auto stop_timer_thresh = std::chrono::system_clock::now();
 
 
-Image Image::debug_canny() {
-    if (format != FORMAT_GRAY) {
-        throw Exception("wrong format");
-    }
+    auto time_gauss = std::chrono::duration_cast<std::chrono::milliseconds>(stop_timer_gauss - start_timer_gauss).count();
+    auto time_sobel = std::chrono::duration_cast<std::chrono::milliseconds>(stop_timer_sobel - start_timer_sobel).count();
+    auto time_grad = std::chrono::duration_cast<std::chrono::milliseconds>(stop_timer_grad - start_timer_grad).count();
+    auto time_max = std::chrono::duration_cast<std::chrono::milliseconds>(stop_timer_max - start_timer_max).count();
+    auto time_thresh = std::chrono::duration_cast<std::chrono::milliseconds>(stop_timer_thresh - start_timer_thresh).count();
 
-    std::shared_ptr<uint8_t[]> gauss(gaussianBlur(FORMAT_GRAY));
+    std::string tg = std::to_string(time_gauss);
+    std::string ts = std::to_string(time_sobel);
+    std::string tgr = std::to_string(time_grad);
+    std::string tm = std::to_string(time_max);
+    std::string tt = std::to_string(time_thresh);
 
-    std::shared_ptr<uint8_t[]> sobel_x(sobel(gauss.get(), true));
-    std::shared_ptr<uint8_t[]> sobel_y(sobel(gauss.get(), false));
-
-    uint16_t grad_val[size];
-    uint8_t grad_dir[size];
-    double atan;
-    for (int i = 0; i < size; i++) {
-        grad_val[i] = std::sqrt(sobel_x[i] * sobel_x[i] + sobel_y[i] * sobel_y[i]);
-        grad_dir[i] = getGradientDirection(sobel_x[i], sobel_y[i]);
-    }
-
-    std::shared_ptr<uint16_t[]> max(new uint16_t[size]);
-    for (int y = 0; y < h; y++) {
-        for (int x = 0; x < w; x++) {
-            std::shared_ptr<uint16_t[]> neighbors = findNeighbors(grad_val, x, y, w, h);
-            max[y*w+x] = suppressNonMax(neighbors.get(), grad_val[y*w+x], grad_dir[y*w+x]);
-        }
-    }
-
-    uint16_t lower_threshold = 10;
-    uint16_t upper_threshold = 50;
-    std::shared_ptr<uint8_t[]> db_threshold = doubleThreshold(max.get(), lower_threshold, upper_threshold);
-
-    std::shared_ptr<uint8_t[]> canny = checkStrongIds(db_threshold.get());
-
-    /*std::shared_ptr<uint8_t[]> check_gauss(new uint8_t[size*3]);
-    for (int i = 0; i < size; i++) {
-        check_gauss[3*i] = gauss[i];
-        check_gauss[3*i+1] = gauss[i];
-        check_gauss[3*i+2] = gauss[i];
-    }*/
-
-    /*std::shared_ptr<uint8_t[]> check_sobel_x(new uint8_t[size*3]);
-    for (int i = 0; i < size; i++) {
-        check_sobel_x[3*i] = sobel_x[i];
-        check_sobel_x[3*i+1] = sobel_x[i];
-        check_sobel_x[3*i+2] = sobel_x[i];
-    }*/
-
-    /*std::shared_ptr<uint8_t[]> check_sobel_y(new uint8_t[size*3]);
-    for (int i = 0; i < size; i++) {
-        check_sobel_y[3*i] = sobel_y[i];
-        check_sobel_y[3*i+1] = sobel_y[i];
-        check_sobel_y[3*i+2] = sobel_y[i];
-    }*/
-
-    /*std::shared_ptr<uint8_t[]> check_grad_val(new uint8_t[size*3]);
-    memset(check_grad_val.get(), 0, size);
-    for (int i = 0; i < size; i++) {
-        if (grad_val[i] > 255) {//r
-            check_grad_val[3*i] = 255;
-            check_grad_val[3*i+1] = 255;
-            check_grad_val[3*i+2] = 255;
-        }
-        else {
-            check_grad_val[3*i] = grad_val[i];
-            check_grad_val[3*i+1] = grad_val[i];
-            check_grad_val[3*i+2] = grad_val[i];
-        }
-    }*/
-
-    /*std::shared_ptr<uint8_t[]> check_grad_val_color(new uint8_t[size*3]);
-    memset(check_grad_val_color.get(), 0, size);
-    for (int i = 0; i < size; i++) {
-        if (grad_val[i] > 255) {//r
-            check_grad_val_color[i*3] = 255;
-        }
-        if (255 > grad_val[i] && grad_val[i] > 0) {//g
-            check_grad_val_color[i*3+1] = 255;
-        }
-        if (grad_val[i] == 0) {//b
-            check_grad_val_color[i*3+2] = 255;
-        }
-        if (grad_val[i] == 255) {//p
-            check_grad_val_color[i*3] = 255;
-            check_grad_val_color[i*3+2] = 255;
-        }
-    }*/
-
-    /*std::shared_ptr<uint8_t[]> check_grad_dir(new uint8_t[size*3]);
-    memset(check_grad_dir.get(), 0, size);
-    for (int i = 0; i < size; i++) {
-        if (grad_dir[i] == 0) {//r
-            check_grad_dir[i*3] = 255;
-        }
-        if (grad_dir[i] == 1) {//g
-            check_grad_dir[i*3+1] = 255;
-        }
-        if (grad_dir[i] == 2) {//b
-            check_grad_dir[i*3+2] = 255;
-        }
-        if (grad_dir[i] == 3) {//p
-            check_grad_dir[i*3] = 255;
-            check_grad_dir[i*3+2] = 255;
-        }
-    }*/
-
-    /*std::shared_ptr<uint8_t[]> check_max(new uint8_t[size*3]);
-    memset(check_max.get(), 0, size);
-    for (int i = 0; i < size; i++) {
-        if (max[i] > 255) {
-            check_max[i*3] = 255;
-            check_max[i*3+1] = 255;
-            check_max[i*3+2] = 255;
-        }
-        else {
-            check_max[i*3] = max[i];
-            check_max[i*3+1] = max[i];
-            check_max[i*3+2] = max[i];
-        }
-    }*/
-
-    /*std::shared_ptr<uint8_t[]> check_max_color(new uint8_t[size*3]);
-    memset(check_max_color.get(), 0, size);
-    for (int i = 0; i < size; i++) {
-        if (max[i] > 255) {//r
-            check_max_color[i*3] = 255;
-        }
-        if (255 > max[i] && max[i] > 0) {//g
-            check_max_color[i*3+1] = 255;
-        }
-        if (max[i] == 0) {//b
-            check_max_color[i*3+2] = 255;
-        }
-        if (max[i] == 255) {//p
-            check_max_color[i*3] = 255;
-            check_max_color[i*3+2] = 255;
-        }
-    }*/
-
-
-    /*std::shared_ptr<uint8_t[]> check_threshold(new uint8_t[size*3]);
-    memset(check_threshold.get(), 0, size);
-    for (int i = 0; i < size; i++) {
-        if (db_threshold[i] == 2) {//r
-            check_threshold[i*3] = 255;
-        }
-        if (db_threshold[i] == 1) {//g
-            check_threshold[i*3+1] = 255;
-        }
-        if (db_threshold[i] == 0) {//b
-            check_threshold[i*3+2] = 255;
-        }
-    }*/
-
-
-    /*std::shared_ptr<uint8_t[]> check_canny(new uint8_t[size*3]);
-    for (int i = 0; i < size; i++) {
-        check_canny[i*3] = canny[i];
-        check_canny[i*3+1] = canny[i];
-        check_canny[i*3+2] = canny[i];
-    }*/
+    alpha = tg + " " + ts + " " + tgr + " " + tm + " " + tt;
 
     return Image(canny, w, h, FORMAT_BIN);
 }
